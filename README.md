@@ -20,7 +20,7 @@ First, create a login.
 Be aware to **always** use the complete matrix id including the domain, e.g. `@user:example.org`.
 
 ```
-$ mnotify -l
+$ mnotify login
 ```
 
 The access token is stored in `~/.config/mnotify/config.toml`.
@@ -29,21 +29,22 @@ Keep this file secret.
 Now create a room and invite the user to whom you want to send notifications (here: `@user:example.org`).
 
 ```
-$ mnotify -c
+$ mnotify room --create
 !gBSqYoCSkyAHgqJEcW:hackbrettl.de
-$ mnotify -u "@user:example.org" -r "!gBSqYoCSkyAHgqJEcW:hackbrettl.de" -i
+$ mnotify room --invive --user "@user:example.org" --room "!gBSqYoCSkyAHgqJEcW:hackbrettl.de"
 ```
 
 Once the user `@user:example.org` joins the room, text messages can be sent to the room like this:
 
 ```
-$ echo "Hello World!" | mnotify -r !gBSqYoCSkyAHgqJEcW:hackbrettl.de
+$ echo "Hello World!" | mnotify send --room !gBSqYoCSkyAHgqJEcW:hackbrettl.de
 ```
 
-## Future Work
+Alternatively it can be used like this:
 
-In case we add more features to `mnotify`, the cli must be restructured.
-For now it is okay.
+```
+$ mnotify send --room !gBSqYoCSkyAHgqJEcW:hackbrettl.de --message "Hello World!"
+```
 
 ## Build
 
