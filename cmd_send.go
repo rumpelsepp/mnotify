@@ -25,6 +25,9 @@ func (c *sendCommand) run(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
+		if len(m) == 0 {
+			os.Exit(0)
+		}
 		msg = string(m)
 	}
 	_, err = c.globalOpts.client.SendText(id.RoomID(c.globalOpts.roomID), string(msg))
