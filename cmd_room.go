@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -32,6 +33,17 @@ const (
 func dieNoRoomID() {
 	fmt.Println("no operation supplied")
 	os.Exit(1)
+}
+
+type member struct {
+	UserID      string `json:"user_id"`
+	DisplayName string `json:"display_name,omitempty"`
+}
+
+type outJSON struct {
+	RoomID   string   `json:"room_id"`
+	RoomName string   `json:"room_name,omitempty"`
+	Members  []member `json:"members,omitempty"`
 }
 
 func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
@@ -67,22 +79,37 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 			fmt.Printf("getting room list failed: %s\n", err)
 			os.Exit(1)
 		}
-		for _, rawRoom := range rooms.JoinedRooms {
-			room := mautrix.NewRoom(rawRoom)
-			event := room.GetStateEvent(event.StateCanonicalAlias, "")
+		for _, roomID := range rooms.JoinedRooms {
+			var (
+				room  = mautrix.NewRoom(roomID)
+				event = room.GetStateEvent(event.StateCanonicalAlias, "")
+				out   = outJSON{
+					RoomID: string(roomID),
+				}
+			)
 			if event != nil {
-				fmt.Println(event.Content.AsCanonicalAlias().Alias)
+				out.RoomName = string(event.Content.AsCanonicalAlias().Alias)
+			}
+			members, err := c.globalOpts.client.JoinedMembers(room.ID)
+			if err != nil {
+				fmt.Printf("error room %s: %s\n", roomID, err)
+				continue
+			}
+			for k, v := range members.Joined {
+				m := member{
+					UserID:      string(k),
+					DisplayName: *v.DisplayName,
+				}
+				out.Members = append(out.Members, m)
+			}
+			if c.globalOpts.json {
+				o, _ := json.Marshal(out)
+				fmt.Println(string(o))
 			} else {
-				members, err := c.globalOpts.client.JoinedMembers(room.ID)
-				if err != nil {
-					fmt.Printf("error room %s: %s\n", rawRoom, err)
-					continue
+				fmt.Println(out.RoomID)
+				for _, m := range out.Members {
+					fmt.Printf("  %s|%s\n", m.DisplayName, m.UserID)
 				}
-				fmt.Println(rawRoom)
-				for k, v := range members.Joined {
-					fmt.Printf("  %s (%s)\n", *v.DisplayName, k)
-				}
-				fmt.Println("")
 			}
 		}
 	case c.join:
