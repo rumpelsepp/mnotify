@@ -54,6 +54,7 @@ func main() {
 	var (
 		globalOpts = globalOptions{}
 		loginCmd   = loginCommand{globalOpts: &globalOpts}
+		logoutCmd  = loginCommand{globalOpts: &globalOpts}
 		roomCmd    = roomCommand{globalOpts: &globalOpts}
 		sendCmd    = sendCommand{globalOpts: &globalOpts}
 		syncCmd    = syncCommand{globalOpts: &globalOpts}
@@ -87,6 +88,11 @@ func main() {
 			Use:   "login",
 			Short: "Manage Login",
 			RunE:  loginCmd.run,
+		}
+		logoutCobraCmd = &cobra.Command{
+			Use:   "logout",
+			Short: "Logout with this session",
+			RunE:  logoutCmd.run,
 		}
 		roomCobraCmd = &cobra.Command{
 			Use:   "room",
@@ -144,6 +150,9 @@ func main() {
 
 	// login
 	rootCobraCmd.AddCommand(loginCobraCmd)
+
+	// logout
+	rootCobraCmd.AddCommand(logoutCobraCmd)
 
 	// room
 	roomFlags := roomCobraCmd.Flags()
