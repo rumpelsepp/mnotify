@@ -158,6 +158,7 @@ func main() {
 	// room
 	roomFlags := roomCobraCmd.Flags()
 	roomFlags.BoolVarP(&roomCmd.create, "create", "c", false, "Create a new room")
+	roomFlags.BoolVarP(&roomCmd.direct, "direct", "d", false, "Create a direct room")
 	roomFlags.StringVarP(&roomCmd.profile, "profile", "", profileTrustedPrivate, fmt.Sprintf("The room profile [%s, %s, %s]", profileTrustedPrivate, profilePrivate, profilePublic))
 	roomFlags.BoolVarP(&roomCmd.invite, "invite", "i", false, "Invite a user to a room")
 	roomFlags.BoolVarP(&roomCmd.list, "list", "l", false, "List the user's rooms")

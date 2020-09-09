@@ -13,6 +13,7 @@ import (
 type roomCommand struct {
 	globalOpts *globalOptions
 	create     bool
+	direct     bool
 	invite     bool
 	list       bool
 	leave      bool
@@ -36,7 +37,8 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 	switch {
 	case c.create:
 		req := &mautrix.ReqCreateRoom{
-			Preset: c.profile,
+			Preset:   c.profile,
+			IsDirect: c.direct,
 		}
 		resp, err := c.globalOpts.client.CreateRoom(req)
 		if err != nil {
