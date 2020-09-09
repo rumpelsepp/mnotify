@@ -29,9 +29,7 @@ Keep this file secret.
 Now create a room and invite the user to whom you want to send notifications (here: `@user:example.org`).
 
 ```
-$ mnotify room --create
-!gBSqYoCSkyAHgqJEcW:hackbrettl.de
-$ mnotify room --invive --user "@user:example.org" --room "!gBSqYoCSkyAHgqJEcW:hackbrettl.de"
+$ mnotify room --create --direct --invites "@user:example.org"
 ```
 
 Once the user `@user:example.org` joins the room, text messages can be sent to the room like this:
