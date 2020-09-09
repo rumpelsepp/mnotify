@@ -18,7 +18,14 @@ type roomCommand struct {
 	leave      bool
 	forget     bool
 	join       bool
+	profile    string
 }
+
+const (
+	profilePrivate        = "private_chat"
+	profileTrustedPrivate = "trusted_private_chat"
+	profilePublic         = "public_chat"
+)
 
 func dieNoRoomID() {
 	fmt.Println("no operation supplied")
@@ -29,7 +36,7 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 	switch {
 	case c.create:
 		req := &mautrix.ReqCreateRoom{
-			Preset: "trusted_private_chat",
+			Preset: c.profile,
 		}
 		resp, err := c.globalOpts.client.CreateRoom(req)
 		if err != nil {
