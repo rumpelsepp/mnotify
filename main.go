@@ -11,6 +11,7 @@ import (
 type globalOptions struct {
 	roomID string
 	userID string
+	json   bool
 	client *mautrix.Client
 	config *config
 }
@@ -55,6 +56,7 @@ func main() {
 		loginCmd   = loginCommand{globalOpts: &globalOpts}
 		roomCmd    = roomCommand{globalOpts: &globalOpts}
 		sendCmd    = sendCommand{globalOpts: &globalOpts}
+		syncCmd    = syncCommand{globalOpts: &globalOpts}
 	)
 	var (
 		rootCobraCmd = &cobra.Command{
@@ -96,6 +98,11 @@ func main() {
 			Short: "Send messages to a room",
 			RunE:  sendCmd.run,
 		}
+		syncCobraCmd = &cobra.Command{
+			Use:   "sync",
+			Short: "Stream matrix event's to the terminal",
+			RunE:  syncCmd.run,
+		}
 		versionCobraCmd = &cobra.Command{
 			Use:   "version",
 			Short: "Ask the homeserver about supported protocol versions",
@@ -133,6 +140,7 @@ func main() {
 	globalFlags := rootCobraCmd.PersistentFlags()
 	globalFlags.StringVarP(&globalOpts.userID, "user", "U", "", "Specify the full matrix user id")
 	globalFlags.StringVarP(&globalOpts.roomID, "room", "R", "", "Specify a room to operate on")
+	globalFlags.BoolVarP(&globalOpts.json, "json", "J", false, "Output JSON if supported")
 
 	// login
 	rootCobraCmd.AddCommand(loginCobraCmd)
@@ -148,6 +156,9 @@ func main() {
 	sendFlags := sendCobraCmd.Flags()
 	sendFlags.StringVarP(&sendCmd.message, "message", "m", "", "Send this message instead of stdin")
 	rootCobraCmd.AddCommand(sendCobraCmd)
+
+	// sync
+	rootCobraCmd.AddCommand(syncCobraCmd)
 
 	// version
 	rootCobraCmd.AddCommand(versionCobraCmd)
