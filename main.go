@@ -159,6 +159,8 @@ func main() {
 	roomFlags.BoolVarP(&roomCmd.create, "create", "c", false, "Create a new room")
 	roomFlags.BoolVarP(&roomCmd.invite, "invite", "i", false, "Invite a user to a room")
 	roomFlags.BoolVarP(&roomCmd.list, "list", "l", false, "List the user's rooms")
+	roomFlags.BoolVarP(&roomCmd.leave, "leave", "", false, "Leave a room")
+	roomFlags.BoolVarP(&roomCmd.forget, "forget", "", false, "Forget about a room")
 	rootCobraCmd.AddCommand(roomCobraCmd)
 
 	// send

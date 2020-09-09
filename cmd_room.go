@@ -15,6 +15,8 @@ type roomCommand struct {
 	create     bool
 	invite     bool
 	list       bool
+	leave      bool
+	forget     bool
 }
 
 func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
@@ -60,6 +62,27 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 				fmt.Println("")
 			}
 		}
+	case c.leave:
+		if c.globalOpts.roomID == "" {
+			fmt.Println("no room id supplied")
+			os.Exit(1)
+		}
+		_, err := c.globalOpts.client.LeaveRoom(id.RoomID(c.globalOpts.roomID))
+		if err != nil {
+			return err
+		}
+	case c.forget:
+		if c.globalOpts.roomID == "" {
+			fmt.Println("no room id supplied")
+			os.Exit(1)
+		}
+		_, err := c.globalOpts.client.ForgetRoom(id.RoomID(c.globalOpts.roomID))
+		if err != nil {
+			return err
+		}
+	default:
+		fmt.Println("no operation supplied")
+		os.Exit(1)
 	}
 	return nil
 }
