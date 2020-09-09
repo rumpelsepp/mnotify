@@ -14,6 +14,7 @@ type roomCommand struct {
 	globalOpts *globalOptions
 	create     bool
 	direct     bool
+	invites    []string
 	invite     bool
 	list       bool
 	leave      bool
@@ -34,11 +35,16 @@ func dieNoRoomID() {
 }
 
 func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
+	var invites []id.UserID
+	for _, user := range c.invites {
+		invites = append(invites, id.UserID(user))
+	}
 	switch {
 	case c.create:
 		req := &mautrix.ReqCreateRoom{
 			Preset:   c.profile,
 			IsDirect: c.direct,
+			Invite:   invites,
 		}
 		resp, err := c.globalOpts.client.CreateRoom(req)
 		if err != nil {
@@ -46,12 +52,14 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Println(resp.RoomID)
 	case c.invite:
-		req := &mautrix.ReqInviteUser{
-			UserID: id.UserID(c.globalOpts.userID),
-		}
-		_, err := c.globalOpts.client.InviteUser(id.RoomID(c.globalOpts.roomID), req)
-		if err != nil {
-			return err
+		for _, user := range invites {
+			req := &mautrix.ReqInviteUser{
+				UserID: user,
+			}
+			_, err := c.globalOpts.client.InviteUser(id.RoomID(c.globalOpts.roomID), req)
+			if err != nil {
+				return err
+			}
 		}
 	case c.list:
 		rooms, err := c.globalOpts.client.JoinedRooms()
