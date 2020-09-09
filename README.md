@@ -2,14 +2,13 @@
 
 `mnotify` is a simple cli for the [matrix](https://matrix.org) chat system.
 It was developed for the use case of sending notifications from a headless server.
-It might eventually become a more powerful cli matrix client as initially expected…
+It seems to develop into a fully fledged CLI client usable from oldfashioned scripts.
 
-## Supported Features
+## Build
 
-* Login via password, the homeserver is automatically discovered
-* Sending text messages
-* Create private rooms
-* Invite users to a room
+```
+$ make
+```
 
 ## Get Started
 
@@ -44,8 +43,48 @@ Alternatively it can be used like this:
 $ mnotify send --room !gBSqYoCSkyAHgqJEcW:hackbrettl.de --message "Hello World!"
 ```
 
-## Build
+## Further Examples
+
+The output format is column based, the column separator is always `|` enabling `awk` magic.
+Every command that produces output understands the `-J` or `--json` switch.
+On each line one JSON object is printed.
+
+### Stream Messages
 
 ```
-$ make
+$ mnotify sync
+Sep  9 15:23:28.987|m.room.message|$sBZUatMPSqnfqYaD1W-4g4wsHu8vq08wGPD-xYTn6mk|!JJaziyTEiTFWEEWILE:hackbrettl.de|@develop:hackbrettl.de|test
+Sep  9 23:23:48.641|m.room.message|$0kQhv_iyRwL8Us4nbDbij19JkC9A9Nl3dtZPhhVj2MI|!JJaziyTEiTFWEEWILE:hackbrettl.de|@rumpelsepp:hackbrettl.de|test
+Sep  9 23:23:51.107|m.room.message|$3j4G4eD3ASni9rmxrT2qQV-vqCa_l1L4x9eP80n4818|!JJaziyTEiTFWEEWILE:hackbrettl.de|@rumpelsepp:hackbrettl.de|hello
+```
+
+```
+$ mnotify sync --json | jq
+{
+  "body": "test",
+  "event_id": "$sBZUatMPSqnfqYaD1W-4g4wsHu8vq08wGPD-xYTn6mk",
+  "event_type": "m.room.message",
+  "room_id": "!JJaziyTEiTFWEEWILE:hackbrettl.de",
+  "sender": "@develop:hackbrettl.de",
+  "timestamp": "2020-09-09T15:23:28.987+02:00"
+}
+```
+
+### List Rooms
+
+```
+$ mnotify room -l --json
+{
+  "room_id": "!JJaziyTEiTFWEEWILE:hackbrettl.de",
+  "members": [
+    {
+      "user_id": "@develop:hackbrettl.de",
+      "display_name": "develop"
+    },
+    {
+      "user_id": "@rumpelsepp:hackbrettl.de",
+      "display_name": "stefan"
+    }
+  ]
+}
 ```
