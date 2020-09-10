@@ -12,7 +12,9 @@ import (
 )
 
 type syncCommand struct {
-	globalOpts *globalOptions
+	globalOpts  *globalOptions
+	presence    bool
+	syncTimeout int
 }
 
 func (c *syncCommand) printEventJSON(roomID id.RoomID, e *event.Event) {
@@ -90,6 +92,8 @@ func (c *syncCommand) run(cmd *cobra.Command, args []string) error {
 		client    = c.globalOpts.client
 		nextBatch = ""
 		filterID  = ""
+		// TODO: Bug in mautrix; presence type not set on constant.
+		presence event.Presence = event.PresenceOffline
 	)
 
 	for {
@@ -105,7 +109,10 @@ func (c *syncCommand) run(cmd *cobra.Command, args []string) error {
 			}
 			filterID = resp.FilterID
 		}
-		resp, err = client.SyncRequest(30000, nextBatch, filterID, false, event.PresenceOffline)
+		if c.presence {
+			presence = event.PresenceOnline
+		}
+		resp, err = client.SyncRequest(c.syncTimeout, nextBatch, filterID, false, presence)
 		if err != nil {
 			return err
 		}
