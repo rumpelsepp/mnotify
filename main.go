@@ -68,6 +68,29 @@ func main() {
 				globalOpts.config = &conf
 			},
 		}
+		discoverCobraCmd = &cobra.Command{
+			Use:   "discover",
+			Short: "Perform a .well-known client discovery",
+			RunE: func(cmd *cobra.Command, args []string) error {
+				user := id.UserID(globalOpts.userID)
+				_, homeserver, err := user.Parse()
+				if err != nil {
+					return err
+				}
+				wellKnown, err := mautrix.DiscoverClientAPI(homeserver)
+				if err != nil {
+					return err
+				}
+                // TODO: json needed?
+				if wellKnown.Homeserver.BaseURL != "" {
+                    fmt.Printf("Home Server: %s\n", wellKnown.Homeserver.BaseURL)
+				}
+				if wellKnown.IdentityServer.BaseURL != "" {
+                    fmt.Printf("Indentity Server: %s\n", wellKnown.IdentityServer.BaseURL)
+				}
+				return nil
+			},
+		}
 		loginCobraCmd = &cobra.Command{
 			Use:   "login",
 			Short: "Manage Login",
@@ -136,6 +159,9 @@ func main() {
 	globalFlags.StringVarP(&globalOpts.userID, "user", "U", "", "Specify the full matrix user id")
 	globalFlags.StringVarP(&globalOpts.roomID, "room", "R", "", "Specify a room to operate on")
 	globalFlags.BoolVarP(&globalOpts.json, "json", "J", false, "Output JSON if supported")
+
+	// discover
+	rootCobraCmd.AddCommand(discoverCobraCmd)
 
 	// login
 	rootCobraCmd.AddCommand(loginCobraCmd)
