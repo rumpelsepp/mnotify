@@ -33,24 +33,6 @@ func createClient(user id.UserID, token string) (*mautrix.Client, error) {
 	return client, nil
 }
 
-// func logout() {
-// }
-//
-// func roomLeave() {
-// }
-//
-// func roomForget() {
-// }
-//
-// func meSetAccountData() {
-// }
-//
-// func meSetAvatarURL() {
-// }
-//
-// func meSetDisplayName() {
-// }
-
 func main() {
 	var (
 		globalOpts = globalOptions{}
@@ -59,6 +41,7 @@ func main() {
 		roomCmd    = roomCommand{globalOpts: &globalOpts}
 		sendCmd    = sendCommand{globalOpts: &globalOpts}
 		syncCmd    = syncCommand{globalOpts: &globalOpts}
+		userCmd    = userCommand{globalOpts: &globalOpts}
 	)
 	var (
 		rootCobraCmd = &cobra.Command{
@@ -109,6 +92,11 @@ func main() {
 			Use:   "sync",
 			Short: "Stream matrix event's to the terminal",
 			RunE:  syncCmd.run,
+		}
+		userCobraCmd = &cobra.Command{
+			Use:   "user",
+			Short: "View and manage user data (avatar, display name, …)",
+			RunE:  userCmd.run,
 		}
 		versionCobraCmd = &cobra.Command{
 			Use:   "version",
@@ -175,6 +163,9 @@ func main() {
 
 	// sync
 	rootCobraCmd.AddCommand(syncCobraCmd)
+
+	// user
+	rootCobraCmd.AddCommand(userCobraCmd)
 
 	// version
 	rootCobraCmd.AddCommand(versionCobraCmd)
