@@ -10,11 +10,11 @@ import (
 )
 
 type globalOptions struct {
-	roomID string
-	userID string
-	json   bool
-	client *mautrix.Client
-	config *config
+	roomID       string
+	userID       string
+	json         bool
+	client       *mautrix.Client
+	config       *config
 }
 
 func createClient(user id.UserID, token string) (*mautrix.Client, error) {

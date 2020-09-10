@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -13,7 +14,7 @@ import (
 	"maunium.net/go/mautrix/id"
 )
 
-func loginPassword(client *mautrix.Client, user id.UserID, password string) (string, error) {
+func loginPassword(client *mautrix.Client, user id.UserID, password string) (*mautrix.RespLogin, error) {
 	loginReq := mautrix.ReqLogin{
 		Type: mautrix.AuthTypePassword,
 		Identifier: mautrix.UserIdentifier{
@@ -25,11 +26,7 @@ func loginPassword(client *mautrix.Client, user id.UserID, password string) (str
 		StoreCredentials:         true,
 	}
 
-	resp, err := client.Login(&loginReq)
-	if err != nil {
-		return "", err
-	}
-	return resp.AccessToken, nil
+	return client.Login(&loginReq)
 }
 
 type loginCommand struct {
@@ -51,14 +48,19 @@ func (c *loginCommand) run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	token, err := loginPassword(client, user, string(password))
+	resp, err := loginPassword(client, user, string(password))
 	if err != nil {
 		return err
 	}
 	if c.printToken {
-		fmt.Println(user)
+		if c.globalOpts.json {
+			out, _ := json.Marshal(resp)
+			fmt.Println(string(out))
+		} else {
+			fmt.Printf("%s|%s|%s\n", resp.UserID, resp.DeviceID, resp.AccessToken)
+		}
 	} else {
-		if err := storeConfig(user, token); err != nil {
+		if err := storeConfig(resp.UserID, resp.DeviceID, resp.AccessToken); err != nil {
 			return err
 		}
 	}

@@ -41,7 +41,7 @@ func loadConfig() (config, error) {
 	return conf, nil
 }
 
-func storeConfig(user id.UserID, accessToken string) error {
+func storeConfig(user id.UserID, deviceID id.DeviceID, accessToken string) error {
 	confPath := configPath()
 	confDir := filepath.Dir(confPath)
 	if _, err := os.Stat(confDir); os.IsNotExist(err) {
@@ -55,7 +55,8 @@ func storeConfig(user id.UserID, accessToken string) error {
 	}
 	data := fmt.Sprintf(`UserID = "%s"
 AccessToken = "%s"
-`, user, accessToken)
+DeviceID = "%s"
+`, user, accessToken, deviceID)
 	if _, err := io.Copy(file, strings.NewReader(data)); err != nil {
 		return err
 	}
