@@ -37,7 +37,7 @@ func main() {
 	var (
 		globalOpts = globalOptions{}
 		loginCmd   = loginCommand{globalOpts: &globalOpts}
-		logoutCmd  = loginCommand{globalOpts: &globalOpts}
+		logoutCmd  = logoutCommand{globalOpts: &globalOpts}
 		roomCmd    = roomCommand{globalOpts: &globalOpts}
 		sendCmd    = sendCommand{globalOpts: &globalOpts}
 		syncCmd    = syncCommand{globalOpts: &globalOpts}
@@ -81,12 +81,12 @@ func main() {
 				if err != nil {
 					return err
 				}
-                // TODO: json needed?
+				// TODO: json needed?
 				if wellKnown.Homeserver.BaseURL != "" {
-                    fmt.Printf("Home Server: %s\n", wellKnown.Homeserver.BaseURL)
+					fmt.Printf("Home Server: %s\n", wellKnown.Homeserver.BaseURL)
 				}
 				if wellKnown.IdentityServer.BaseURL != "" {
-                    fmt.Printf("Indentity Server: %s\n", wellKnown.IdentityServer.BaseURL)
+					fmt.Printf("Indentity Server: %s\n", wellKnown.IdentityServer.BaseURL)
 				}
 				return nil
 			},
@@ -168,6 +168,8 @@ func main() {
 
 	// logout
 	rootCobraCmd.AddCommand(logoutCobraCmd)
+	logoutFlags := logoutCobraCmd.Flags()
+	logoutFlags.BoolVarP(&logoutCmd.force, "force", "f", false, "Perform the logout")
 
 	// room
 	roomFlags := roomCobraCmd.Flags()
