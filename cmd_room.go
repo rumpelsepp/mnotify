@@ -136,6 +136,7 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 		if roomID == "" {
 			dieNoRoomID()
 		}
+        fmt.Println("This subcommand is currently broken")
 		resp, err := client.Messages(roomID, "", "", 'f', int(c.number))
 		if err != nil {
 			return err
