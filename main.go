@@ -113,7 +113,7 @@ func main() {
 		}
 		syncCobraCmd = &cobra.Command{
 			Use:   "sync",
-			Short: "Stream matrix event's to the terminal",
+			Short: "Stream matrix events to the terminal",
 			RunE:  syncCmd.run,
 		}
 		userCobraCmd = &cobra.Command{
