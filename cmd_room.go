@@ -35,18 +35,17 @@ func dieNoRoomID() {
 	os.Exit(1)
 }
 
-type member struct {
-	UserID      string `json:"user_id"`
-	DisplayName string `json:"display_name,omitempty"`
-}
-
-type outJSON struct {
-	RoomID   string   `json:"room_id"`
-	RoomName string   `json:"room_name,omitempty"`
-	Members  []member `json:"members,omitempty"`
-}
-
 func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
+	type member struct {
+		UserID      string `json:"user_id"`
+		DisplayName string `json:"display_name,omitempty"`
+	}
+	type outData struct {
+		RoomID   string   `json:"room_id"`
+		RoomName string   `json:"room_name,omitempty"`
+		Members  []member `json:"members,omitempty"`
+	}
+
 	var invites []id.UserID
 	for _, user := range c.invites {
 		invites = append(invites, id.UserID(user))
@@ -83,7 +82,7 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 			var (
 				room  = mautrix.NewRoom(roomID)
 				event = room.GetStateEvent(event.StateCanonicalAlias, "")
-				out   = outJSON{
+				out   = outData{
 					RoomID: string(roomID),
 				}
 			)

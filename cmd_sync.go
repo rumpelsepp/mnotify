@@ -11,25 +11,24 @@ import (
 	"maunium.net/go/mautrix/id"
 )
 
-type eventOut struct {
-	Body      string    `json:"body,omitempty"`
-	Error     string    `json:"error,omitempty"`
-	EventID   string    `json:"event_id"`
-	EventType string    `json:"event_type"`
-	RoomID    string    `json:"room_id,omitempty"`
-	Sender    string    `json:"sender,omitempty"`
-	Timestamp time.Time `json:"timestamp"`
-}
-
 type syncCommand struct {
 	globalOpts *globalOptions
 }
 
 func (c *syncCommand) printEventJSON(roomID id.RoomID, e *event.Event) {
+	type outData struct {
+		Body      string    `json:"body,omitempty"`
+		Error     string    `json:"error,omitempty"`
+		EventID   string    `json:"event_id"`
+		EventType string    `json:"event_type"`
+		RoomID    string    `json:"room_id,omitempty"`
+		Sender    string    `json:"sender,omitempty"`
+		Timestamp time.Time `json:"timestamp"`
+	}
 	var (
 		s        = e.Timestamp / 1000
 		ns       = (e.Timestamp - s*1000) * 1000000
-		outEvent = eventOut{
+		outEvent = outData{
 			EventID:   e.ID.String(),
 			EventType: e.Type.String(),
 			RoomID:    roomID.String(),

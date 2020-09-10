@@ -12,12 +12,11 @@ type userCommand struct {
 	globalOpts *globalOptions
 }
 
-type outData struct {
-	UserID      string `json:"user_id"`
-	DisplayName string `json:"display_name,omitempty"`
-}
-
 func (c *userCommand) run(cmd *cobra.Command, args []string) error {
+	type outData struct {
+		UserID      string `json:"user_id"`
+		DisplayName string `json:"display_name,omitempty"`
+	}
 	var (
 		client = c.globalOpts.client
 		user   id.UserID
