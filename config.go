@@ -25,10 +25,19 @@ func configPath() string {
 	return filepath.Join(p, "mnotify", "config.toml")
 }
 
+var globalConfigPath = "/etc/mnotify/config.toml"
+
 func loadConfig() (config, error) {
-	file, err := os.Open(configPath())
+	var (
+		err  error
+		file *os.File
+	)
+	file, err = os.Open(configPath())
 	if err != nil {
-		return config{}, err
+		file, err = os.Open(globalConfigPath)
+		if err != nil {
+			return config{}, err
+		}
 	}
 	confStr, err := ioutil.ReadAll(file)
 	if err != nil {
