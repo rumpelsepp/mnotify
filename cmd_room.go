@@ -21,6 +21,8 @@ type roomCommand struct {
 	leave      bool
 	forget     bool
 	join       bool
+	messages   bool
+	number     uint
 	profile    string
 }
 
@@ -46,7 +48,11 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 		Members  []member `json:"members,omitempty"`
 	}
 
-	var invites []id.UserID
+	var (
+		client  = c.globalOpts.client
+		roomID  = id.RoomID(c.globalOpts.roomID)
+		invites []id.UserID
+	)
 	for _, user := range c.invites {
 		invites = append(invites, id.UserID(user))
 	}
@@ -57,7 +63,7 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 			IsDirect: c.direct,
 			Invite:   invites,
 		}
-		resp, err := c.globalOpts.client.CreateRoom(req)
+		resp, err := client.CreateRoom(req)
 		if err != nil {
 			return err
 		}
@@ -67,16 +73,15 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 			req := &mautrix.ReqInviteUser{
 				UserID: user,
 			}
-			_, err := c.globalOpts.client.InviteUser(id.RoomID(c.globalOpts.roomID), req)
+			_, err := client.InviteUser(roomID, req)
 			if err != nil {
 				return err
 			}
 		}
 	case c.list:
-		rooms, err := c.globalOpts.client.JoinedRooms()
+		rooms, err := client.JoinedRooms()
 		if err != nil {
-			fmt.Printf("getting room list failed: %s\n", err)
-			os.Exit(1)
+			return err
 		}
 		for _, roomID := range rooms.JoinedRooms {
 			var (
@@ -89,7 +94,7 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 			if event != nil {
 				out.RoomName = string(event.Content.AsCanonicalAlias().Alias)
 			}
-			members, err := c.globalOpts.client.JoinedMembers(room.ID)
+			members, err := client.JoinedMembers(room.ID)
 			if err != nil {
 				fmt.Printf("error room %s: %s\n", roomID, err)
 				continue
@@ -112,26 +117,36 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 			}
 		}
 	case c.join:
-		if c.globalOpts.roomID == "" {
+		if roomID == "" {
 			dieNoRoomID()
 		}
-		_, err := c.globalOpts.client.JoinRoomByID(id.RoomID(c.globalOpts.roomID))
+		_, err := client.JoinRoomByID(roomID)
 		if err != nil {
 			return err
 		}
 	case c.leave:
-		if c.globalOpts.roomID == "" {
+		if roomID == "" {
 			dieNoRoomID()
 		}
-		_, err := c.globalOpts.client.LeaveRoom(id.RoomID(c.globalOpts.roomID))
+		_, err := client.LeaveRoom(id.RoomID(c.globalOpts.roomID))
 		if err != nil {
 			return err
 		}
-	case c.forget:
-		if c.globalOpts.roomID == "" {
+	case c.messages:
+		if roomID == "" {
 			dieNoRoomID()
 		}
-		_, err := c.globalOpts.client.ForgetRoom(id.RoomID(c.globalOpts.roomID))
+		resp, err := client.Messages(roomID, "", "", 'f', int(c.number))
+		if err != nil {
+			return err
+		}
+		// FIXME: This response is always empty. What am I doing wrong?
+		fmt.Printf("%+v\n", resp)
+	case c.forget:
+		if roomID == "" {
+			dieNoRoomID()
+		}
+		_, err := client.ForgetRoom(id.RoomID(c.globalOpts.roomID))
 		if err != nil {
 			return err
 		}
