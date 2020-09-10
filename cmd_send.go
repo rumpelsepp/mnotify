@@ -11,6 +11,7 @@ import (
 type sendCommand struct {
 	globalOpts *globalOptions
 	message    string
+	    string
 }
 
 func (c *sendCommand) run(cmd *cobra.Command, args []string) error {
@@ -30,7 +31,8 @@ func (c *sendCommand) run(cmd *cobra.Command, args []string) error {
 		}
 		msg = string(m)
 	}
-	_, err = c.globalOpts.client.SendText(id.RoomID(c.globalOpts.roomID), string(msg))
+
+	_, err = c.globalOpts.client.SendText(id.RoomID(c.globalOpts.roomID), msg)
 	if err != nil {
 		return err
 	}

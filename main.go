@@ -200,7 +200,7 @@ func main() {
 	// version
 	rootCobraCmd.AddCommand(versionCobraCmd)
 
-	// whomai
+	// whoami
 	rootCobraCmd.AddCommand(whoamiCobraCmd)
 
 	// Wire everything up.
