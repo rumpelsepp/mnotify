@@ -100,9 +100,13 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 				continue
 			}
 			for k, v := range members.Joined {
+				var displayName string
+				if v.DisplayName != nil {
+					displayName = *v.DisplayName
+				}
 				m := member{
 					UserID:      string(k),
-					DisplayName: *v.DisplayName,
+					DisplayName: displayName,
 				}
 				out.Members = append(out.Members, m)
 			}
@@ -136,7 +140,7 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 		if roomID == "" {
 			dieNoRoomID()
 		}
-        fmt.Println("This subcommand is currently broken")
+		fmt.Println("This subcommand is currently broken")
 		resp, err := client.Messages(roomID, "", "", 'f', int(c.number))
 		if err != nil {
 			return err
