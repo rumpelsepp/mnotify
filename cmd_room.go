@@ -12,18 +12,19 @@ import (
 )
 
 type roomCommand struct {
-	globalOpts *globalOptions
-	create     bool
-	direct     bool
-	invites    []string
-	invite     bool
-	list       bool
-	leave      bool
-	forget     bool
-	join       bool
-	messages   bool
-	number     uint
-	profile    string
+	globalOpts     *globalOptions
+	create         bool
+	direct         bool
+	invites        []string
+	invite         bool
+	list           bool
+	leave          bool
+	forget         bool
+	join           bool
+	messages       bool
+	includeMembers bool
+	number         uint
+	profile        string
 }
 
 const (
@@ -94,21 +95,23 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 			if event != nil {
 				out.RoomName = string(event.Content.AsCanonicalAlias().Alias)
 			}
-			members, err := client.JoinedMembers(room.ID)
-			if err != nil {
-				fmt.Printf("error room %s: %s\n", roomID, err)
-				continue
-			}
-			for k, v := range members.Joined {
-				var displayName string
-				if v.DisplayName != nil {
-					displayName = *v.DisplayName
+			if c.includeMembers {
+				members, err := client.JoinedMembers(room.ID)
+				if err != nil {
+					fmt.Printf("error room %s: %s\n", roomID, err)
+					continue
 				}
-				m := member{
-					UserID:      string(k),
-					DisplayName: displayName,
+				for k, v := range members.Joined {
+					var displayName string
+					if v.DisplayName != nil {
+						displayName = *v.DisplayName
+					}
+					m := member{
+						UserID:      string(k),
+						DisplayName: displayName,
+					}
+					out.Members = append(out.Members, m)
 				}
-				out.Members = append(out.Members, m)
 			}
 			if c.globalOpts.json {
 				o, _ := json.Marshal(out)

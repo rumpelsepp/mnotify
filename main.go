@@ -203,6 +203,7 @@ func main() {
 	roomFlags.StringVarP(&roomCmd.profile, "profile", "", profileTrustedPrivate, fmt.Sprintf("The room profile [%s, %s, %s]", profileTrustedPrivate, profilePrivate, profilePublic))
 	roomFlags.BoolVarP(&roomCmd.invite, "invite", "i", false, "Invite a user to a room")
 	roomFlags.StringSliceVarP(&roomCmd.invites, "invites", "", []string{}, "A list of users to invite to a room")
+	roomFlags.BoolVarP(&roomCmd.includeMembers, "members", "", false, "Include room members")
 	roomFlags.BoolVarP(&roomCmd.list, "list", "l", false, "List the user's rooms")
 	roomFlags.BoolVarP(&roomCmd.leave, "leave", "", false, "Leave a room")
 	roomFlags.BoolVarP(&roomCmd.forget, "forget", "", false, "Forget about a room")
