@@ -10,11 +10,11 @@ import (
 )
 
 type globalOptions struct {
-	roomID       string
-	userID       string
-	json         bool
-	client       *mautrix.Client
-	config       *config
+	roomID string
+	userID string
+	json   bool
+	client *mautrix.Client
+	config *config
 }
 
 func createClient(user id.UserID, token string) (*mautrix.Client, error) {
@@ -35,13 +35,17 @@ func createClient(user id.UserID, token string) (*mautrix.Client, error) {
 
 func main() {
 	var (
-		globalOpts = globalOptions{}
-		loginCmd   = loginCommand{globalOpts: &globalOpts}
-		logoutCmd  = logoutCommand{globalOpts: &globalOpts}
-		roomCmd    = roomCommand{globalOpts: &globalOpts}
-		sendCmd    = sendCommand{globalOpts: &globalOpts}
-		syncCmd    = syncCommand{globalOpts: &globalOpts}
-		userCmd    = userCommand{globalOpts: &globalOpts}
+		globalOpts        = globalOptions{}
+		loginCmd          = loginCommand{globalOpts: &globalOpts}
+		logoutCmd         = logoutCommand{globalOpts: &globalOpts}
+		roomCmd           = roomCommand{globalOpts: &globalOpts}
+		sendCmd           = sendCommand{globalOpts: &globalOpts}
+		synapseCmd        = synapseCommand{globalOpts: &globalOpts}
+		synapseRoomCmd    = synapseRoomCommand{globalOpts: &globalOpts}
+		synapseUserCmd    = synapseUserCommand{globalOpts: &globalOpts}
+		synapseVersionCmd = synapseVersionCommand{globalOpts: &globalOpts}
+		syncCmd           = syncCommand{globalOpts: &globalOpts}
+		userCmd           = userCommand{globalOpts: &globalOpts}
 	)
 	var (
 		rootCobraCmd = &cobra.Command{
@@ -67,6 +71,7 @@ func main() {
 				globalOpts.client = client
 				globalOpts.config = &conf
 			},
+			SilenceUsage: true,
 		}
 		discoverCobraCmd = &cobra.Command{
 			Use:   "discover",
@@ -110,6 +115,26 @@ func main() {
 			Use:   "send",
 			Short: "Send messages to a room",
 			RunE:  sendCmd.run,
+		}
+		synapseCobraCmd = &cobra.Command{
+			Use:   "synapse",
+			Short: "Use the synapse admin api",
+			RunE:  synapseCmd.run,
+		}
+		synapseRoomCobraCmd = &cobra.Command{
+			Use:   "room",
+			Short: "Administrate rooms",
+			RunE:  synapseRoomCmd.run,
+		}
+		synapseUserCobraCmd = &cobra.Command{
+			Use:   "user",
+			Short: "Administrate users",
+			RunE:  synapseUserCmd.run,
+		}
+		synapseVersionCobraCmd = &cobra.Command{
+			Use:   "version",
+			Short: "Query synapse version",
+			RunE:  synapseVersionCmd.run,
 		}
 		syncCobraCmd = &cobra.Command{
 			Use:   "sync",
@@ -190,6 +215,19 @@ func main() {
 	sendFlags := sendCobraCmd.Flags()
 	sendFlags.StringVarP(&sendCmd.message, "message", "m", "", "Send this message instead of stdin")
 	rootCobraCmd.AddCommand(sendCobraCmd)
+
+	// synapse
+	rootCobraCmd.AddCommand(synapseCobraCmd)
+	synapseCobraCmd.AddCommand(synapseRoomCobraCmd)
+	synapseRoomFlags := synapseRoomCobraCmd.Flags()
+	synapseRoomFlags.BoolVarP(&synapseRoomCmd.list, "list", "l", false, "List all rooms on the server")
+	synapseRoomFlags.BoolVarP(&synapseRoomCmd.members, "members", "m", false, "List members of a room")
+	synapseCobraCmd.AddCommand(synapseUserCobraCmd)
+	synapseUserFlags := synapseUserCobraCmd.Flags()
+	synapseUserFlags.BoolVarP(&synapseUserCmd.devices, "devices", "d", false, "List the user's devices")
+	synapseUserFlags.BoolVarP(&synapseUserCmd.show, "show", "s", false, "Show the data associated with the user")
+	synapseUserFlags.BoolVarP(&synapseUserCmd.whois, "whois", "w", false, "List current logins")
+	synapseCobraCmd.AddCommand(synapseVersionCobraCmd)
 
 	// sync
 	rootCobraCmd.AddCommand(syncCobraCmd)
