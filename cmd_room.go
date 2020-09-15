@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"maunium.net/go/mautrix"
@@ -25,7 +26,10 @@ type roomCommand struct {
 	includeMembers bool
 	number         uint
 	profile        string
+	state          string
 }
+
+type anyEvent map[string]interface{}
 
 const (
 	profilePrivate        = "private_chat"
@@ -78,6 +82,19 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				return err
 			}
+		}
+	case c.state != "":
+		if strings.Contains(c.state, "/") {
+			var (
+				split = strings.Split(c.state, "/")
+				eventType = event.Type{split[0], event.StateEventType}
+				content anyEvent
+			)
+			client.StateEvent(roomID, eventType, split[1], &content)
+			o, _ := json.Marshal(content)
+			fmt.Println(string(o))
+		} else {
+			fmt.Println("--state: you must supply a state key and event type separated by /")
 		}
 	case c.list:
 		rooms, err := client.JoinedRooms()

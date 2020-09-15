@@ -210,6 +210,7 @@ func main() {
 	roomFlags.BoolVarP(&roomCmd.join, "join", "", false, "Join a room")
 	roomFlags.BoolVarP(&roomCmd.messages, "messages", "m", false, "List messages of a room")
 	roomFlags.UintVarP(&roomCmd.number, "number", "n", 10, "List messages of a room")
+	roomFlags.StringVarP(&roomCmd.state, "state", "", "", "Output the value of a state/type key")
 	rootCobraCmd.AddCommand(roomCobraCmd)
 
 	// send
