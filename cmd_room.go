@@ -86,9 +86,9 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 	case c.state != "":
 		if strings.Contains(c.state, "/") {
 			var (
-				split = strings.Split(c.state, "/")
-				eventType = event.Type{split[0], event.StateEventType}
-				content anyEvent
+				split     = strings.Split(c.state, "/")
+				eventType = event.Type{Type: split[0], Class: event.StateEventType}
+				content   anyEvent
 			)
 			client.StateEvent(roomID, eventType, split[1], &content)
 			o, _ := json.Marshal(content)
