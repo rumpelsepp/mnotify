@@ -3,4 +3,8 @@ GO ?= go
 mnotify:
 	$(GO) build $(GOFLAGS) -o $@ .
 
-.PHONY: mnotify
+update:
+	$(GO) get -u .
+	$(GO) mod tidy
+
+.PHONY: mnotify update
