@@ -101,7 +101,8 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		for _, roomID := range rooms.JoinedRooms {
+
+		var eachRoom = func(roomID id.RoomID) {
 			var (
 				room  = mautrix.NewRoom(roomID)
 				event = room.GetStateEvent(event.StateCanonicalAlias, "")
@@ -116,18 +117,18 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 				members, err := client.JoinedMembers(room.ID)
 				if err != nil {
 					fmt.Printf("error room %s: %s\n", roomID, err)
-					continue
-				}
-				for k, v := range members.Joined {
-					var displayName string
-					if v.DisplayName != nil {
-						displayName = *v.DisplayName
+				} else {
+					for k, v := range members.Joined {
+						var displayName string
+						if v.DisplayName != nil {
+							displayName = *v.DisplayName
+						}
+						m := member{
+							UserID:      string(k),
+							DisplayName: displayName,
+						}
+						out.Members = append(out.Members, m)
 					}
-					m := member{
-						UserID:      string(k),
-						DisplayName: displayName,
-					}
-					out.Members = append(out.Members, m)
 				}
 			}
 			if c.globalOpts.json {
@@ -138,6 +139,14 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 				for _, m := range out.Members {
 					fmt.Printf("  %s|%s\n", m.DisplayName, m.UserID)
 				}
+			}
+		}
+
+		if roomID != "" {
+			eachRoom(roomID)
+		} else {
+			for _, roomID := range rooms.JoinedRooms {
+				eachRoom(roomID)
 			}
 		}
 	case c.join:
