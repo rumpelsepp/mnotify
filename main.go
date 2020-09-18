@@ -234,6 +234,7 @@ func main() {
 	// sync
 	rootCobraCmd.AddCommand(syncCobraCmd)
 	syncFlags := syncCobraCmd.Flags()
+	syncFlags.BoolVarP(&syncCmd.once, "once", "", false, "Just sync once (without this, will sync forever)")
 	syncFlags.BoolVarP(&syncCmd.presence, "presence", "p", false, "Set presence to online")
 	syncFlags.IntVarP(&syncCmd.syncTimeout, "timeout", "t", 30000, "Matrix sync timeout in ms")
 

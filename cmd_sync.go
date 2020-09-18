@@ -14,6 +14,7 @@ import (
 type syncCommand struct {
 	globalOpts  *globalOptions
 	presence    bool
+	once        bool
 	syncTimeout int
 }
 
@@ -119,5 +120,9 @@ func (c *syncCommand) run(cmd *cobra.Command, args []string) error {
 
 		nextBatch = resp.NextBatch
 		c.printSync(resp)
+
+		if c.once {
+			return nil
+		}
 	}
 }
