@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -36,11 +35,6 @@ const (
 	profileTrustedPrivate = "trusted_private_chat"
 	profilePublic         = "public_chat"
 )
-
-func dieNoRoomID() {
-	fmt.Println("no operation supplied")
-	os.Exit(1)
-}
 
 func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 	type member struct {
