@@ -10,6 +10,12 @@ It seems to develop into a fully fledged CLI client usable from oldfashioned scr
 $ make
 ```
 
+## Contribute
+
+There is a [mailing list](https://lists.sr.ht/~rumpelsepp/public-inbox).
+Instructions about sending patches are at this [tutorial webpage](https://git-send-email.io/).
+Just use the builtin functionality of git. :)
+
 ## Get Started
 
 Obtain a fresh matrix user account on an arbitrary homeserver.
