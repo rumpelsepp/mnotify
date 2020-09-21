@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -86,12 +87,16 @@ func main() {
 				if err != nil {
 					return err
 				}
-				// TODO: json needed?
+				if globalOpts.json {
+					o, _ := json.Marshal(wellKnown)
+					fmt.Println(string(o))
+					return nil
+				}
 				if wellKnown.Homeserver.BaseURL != "" {
 					fmt.Printf("Home Server: %s\n", wellKnown.Homeserver.BaseURL)
 				}
 				if wellKnown.IdentityServer.BaseURL != "" {
-					fmt.Printf("Indentity Server: %s\n", wellKnown.IdentityServer.BaseURL)
+					fmt.Printf("Identity Server: %s\n", wellKnown.IdentityServer.BaseURL)
 				}
 				return nil
 			},
