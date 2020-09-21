@@ -15,6 +15,7 @@ import (
 type config struct {
 	UserID      id.UserID
 	AccessToken string
+	DefaultRoom id.RoomID
 }
 
 func configPath() string {
@@ -27,7 +28,7 @@ func configPath() string {
 
 var globalConfigPath = "/etc/mnotify/config.toml"
 
-func loadConfig() (config, error) {
+func loadConfig() (*config, error) {
 	var (
 		err  error
 		file *os.File
@@ -36,23 +37,25 @@ func loadConfig() (config, error) {
 	if err != nil {
 		file, err = os.Open(globalConfigPath)
 		if err != nil {
-			return config{}, err
+			return nil, err
 		}
 	}
 	confStr, err := ioutil.ReadAll(file)
 	if err != nil {
-		return config{}, err
+		return nil, err
 	}
 	var conf config
 	if err := toml.Unmarshal(confStr, &conf); err != nil {
-		return config{}, err
+		return nil, err
 	}
-	return conf, nil
+	return &conf, nil
 }
 
 func storeConfig(user id.UserID, deviceID id.DeviceID, accessToken string) error {
-	confPath := configPath()
-	confDir := filepath.Dir(confPath)
+	var (
+		confPath = configPath()
+		confDir  = filepath.Dir(confPath)
+	)
 	if _, err := os.Stat(confDir); os.IsNotExist(err) {
 		if err := os.MkdirAll(confDir, 0700); err != nil {
 			return err

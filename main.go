@@ -47,6 +47,7 @@ func main() {
 		syncCmd           = syncCommand{globalOpts: &globalOpts}
 		userCmd           = userCommand{globalOpts: &globalOpts}
 	)
+	conf, confErr := loadConfig()
 	var (
 		rootCobraCmd = &cobra.Command{
 			Use:   "mnotify",
@@ -57,9 +58,8 @@ func main() {
 				if cmd.CalledAs() == "login" {
 					return
 				}
-				conf, err := loadConfig()
-				if err != nil {
-					cmd.PrintErrln(err)
+				if confErr != nil {
+					cmd.PrintErrln(confErr)
 					cmd.PrintErrln("create a valid login")
 					os.Exit(1)
 				}
@@ -69,7 +69,7 @@ func main() {
 					os.Exit(1)
 				}
 				globalOpts.client = client
-				globalOpts.config = &conf
+				globalOpts.config = conf
 			},
 			SilenceUsage: true,
 		}
@@ -179,10 +179,15 @@ func main() {
 		}
 	)
 
+	roomDefault := ""
+	if conf != nil {
+		roomDefault = string(conf.DefaultRoom)
+	}
+
 	// globals
 	globalFlags := rootCobraCmd.PersistentFlags()
 	globalFlags.StringVarP(&globalOpts.userID, "user", "U", "", "Specify the full matrix user id")
-	globalFlags.StringVarP(&globalOpts.roomID, "room", "R", "", "Specify a room to operate on")
+	globalFlags.StringVarP(&globalOpts.roomID, "room", "R", roomDefault, "Specify a room to operate on")
 	globalFlags.BoolVarP(&globalOpts.json, "json", "J", false, "Output JSON if supported")
 
 	// discover
