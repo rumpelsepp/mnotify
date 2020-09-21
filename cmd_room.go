@@ -28,8 +28,6 @@ type roomCommand struct {
 	state          string
 }
 
-type anyEvent map[string]interface{}
-
 const (
 	profilePrivate        = "private_chat"
 	profileTrustedPrivate = "trusted_private_chat"
@@ -82,9 +80,12 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 			var (
 				split     = strings.Split(c.state, "/")
 				eventType = event.Type{Type: split[0], Class: event.StateEventType}
-				content   anyEvent
+				stateKey  = split[1]
+				content   map[string]interface{}
 			)
-			client.StateEvent(roomID, eventType, split[1], &content)
+			if err := client.StateEvent(roomID, eventType, stateKey, &content); err != nil {
+				return err
+			}
 			o, _ := json.Marshal(content)
 			fmt.Println(string(o))
 		} else {
