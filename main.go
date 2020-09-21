@@ -227,6 +227,7 @@ func main() {
 	sendFlags := sendCobraCmd.Flags()
 	sendFlags.StringVarP(&sendCmd.message, "message", "m", "", "Send this message instead of stdin")
 	sendFlags.StringVarP(&sendCmd.formatted, "formatted", "", "", "Alternative formatted text")
+	sendFlags.BoolVarP(&sendCmd.markdown, "markdown", "d", false, "Render the message as markdown")
 	rootCobraCmd.AddCommand(sendCobraCmd)
 
 	// synapse

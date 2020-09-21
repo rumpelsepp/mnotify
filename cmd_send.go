@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
 )
 
@@ -13,6 +14,7 @@ type sendCommand struct {
 	globalOpts *globalOptions
 	message    string
 	formatted  string
+	markdown   bool
 }
 
 func (c *sendCommand) run(cmd *cobra.Command, args []string) error {
@@ -40,6 +42,9 @@ func (c *sendCommand) run(cmd *cobra.Command, args []string) error {
 			Format:        event.FormatHTML,
 			FormattedBody: c.formatted,
 		}
+		_, err = c.globalOpts.client.SendMessageEvent(id.RoomID(c.globalOpts.roomID), event.EventMessage, e)
+	} else if c.markdown {
+		e := format.RenderMarkdown(msg, true, true)
 		_, err = c.globalOpts.client.SendMessageEvent(id.RoomID(c.globalOpts.roomID), event.EventMessage, e)
 	} else {
 		_, err = c.globalOpts.client.SendText(id.RoomID(c.globalOpts.roomID), msg)
