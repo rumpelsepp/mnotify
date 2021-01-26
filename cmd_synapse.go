@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -61,7 +62,7 @@ func (c *synapseRoomCommand) run(cmd *cobra.Command, args []string) error {
 		os.Exit(1)
 	}
 
-	resp, err := client.MakeRequest("GET", u, nil, nil)
+	resp, err := client.MakeRequest(http.MethodGet, u, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -71,7 +72,7 @@ func (c *synapseRoomCommand) run(cmd *cobra.Command, args []string) error {
 
 type synapseUserCommand struct {
 	globalOpts *globalOptions
-	devices       bool
+	devices    bool
 	show       bool
 	whois      bool
 }
@@ -100,10 +101,17 @@ func (c *synapseUserCommand) run(cmd *cobra.Command, args []string) error {
 		fmt.Println("no argument given")
 		os.Exit(1)
 	}
-	resp, err := client.MakeRequest("GET", u, nil, nil)
+	resp, err := client.MakeRequest(http.MethodGet, u, nil, nil)
 	if err != nil {
 		return err
 	}
 	fmt.Println(string(resp))
 	return nil
 }
+
+// type synapsePurgeHistory struct {
+// 	globalOpts *globalOptions
+// 	roomID     id.RoomID
+// 	eventID    id.EventID
+// 	status     bool
+// }
