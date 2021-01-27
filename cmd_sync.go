@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -43,6 +44,17 @@ func (c *syncCommand) printEventJSON(roomID id.RoomID, e *event.Event) {
 	case event.EventMessage:
 		if val, ok := e.Content.Raw["body"]; ok {
 			outEvent.Body = fmt.Sprintf("%s", val)
+		}
+	case event.EventEncrypted:
+		fmt.Printf("%+v\n", e)
+		decrypted, err := c.globalOpts.client.olmMachine.DecryptMegolmEvent(e)
+		if err != nil {
+			outEvent.Error = err.Error()
+		} else {
+			fmt.Println(decrypted)
+			if val, ok := decrypted.Content.Raw["body"]; ok {
+				outEvent.Body = fmt.Sprintf("%s", val)
+			}
 		}
 	default:
 		outEvent.Error = fmt.Sprintf("event type %s not implemented", e.Type.String())
@@ -93,8 +105,7 @@ func (c *syncCommand) run(cmd *cobra.Command, args []string) error {
 		client    = c.globalOpts.client
 		nextBatch = ""
 		filterID  = ""
-		// TODO: Bug in mautrix; presence type not set on constant.
-		presence event.Presence = event.PresenceOffline
+		presence  = event.PresenceOffline
 	)
 
 	for {
@@ -113,7 +124,7 @@ func (c *syncCommand) run(cmd *cobra.Command, args []string) error {
 		if c.presence {
 			presence = event.PresenceOnline
 		}
-		resp, err = client.SyncRequest(c.syncTimeout, nextBatch, filterID, false, presence)
+		resp, err = client.SyncRequest(c.syncTimeout, nextBatch, filterID, false, presence, context.Background())
 		if err != nil {
 			return err
 		}

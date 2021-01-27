@@ -1,24 +1,37 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/spf13/cobra"
 	"maunium.net/go/mautrix"
+	"maunium.net/go/mautrix/crypto"
+	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
+	_ "modernc.org/sqlite"
 )
 
 type globalOptions struct {
 	roomID string
 	userID string
 	json   bool
-	client *mautrix.Client
+
+	client *mnotifyClient
 	config *config
 }
 
-func createClient(user id.UserID, token string) (*mautrix.Client, error) {
+type mnotifyClient struct {
+	*mautrix.Client
+	olmMachine *crypto.OlmMachine
+	store      *crypto.SQLCryptoStore
+	statecache *StateCache
+}
+
+func createClient(user id.UserID, token string) (*mnotifyClient, error) {
 	_, homeserver, err := user.Parse()
 	if err != nil {
 		return nil, err
@@ -31,7 +44,82 @@ func createClient(user id.UserID, token string) (*mautrix.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return client, nil
+
+	db, err := sql.Open("sqlite", "file:///"+stateDir())
+	if err != nil {
+		panic(err)
+	}
+	l := os.Getenv("MNOTIFY_LOG")
+	logLevel := 0
+	if l != "" {
+		if val, err := strconv.Atoi(l); err != nil {
+			logLevel = val
+		}
+	}
+
+	logger := cryptoLogger{level: logLevel}
+	store := crypto.NewSQLCryptoStore(db, "sqlite3", client.DeviceID.String(), client.DeviceID, []byte(client.DeviceID.String()+"pickle"), &logger)
+	// Try to create the tables if they are missing
+	if err = store.CreateTables(); err != nil {
+		return nil, err
+	}
+	statecache, err := NewStateCache(client)
+	if err != nil {
+		return nil, err
+	}
+	olmMachine := crypto.NewOlmMachine(client, &logger, store, statecache)
+	if err := olmMachine.Load(); err != nil {
+		return nil, err
+	}
+
+	mclient := &mnotifyClient{
+		Client:     client,
+		olmMachine: olmMachine,
+		store:      store,
+		statecache: statecache,
+	}
+	mclient.Client.Syncer.(*mautrix.DefaultSyncer).OnSync(mclient.syncCallback)
+	mclient.Client.Syncer.(*mautrix.DefaultSyncer).OnEventType(event.StateMember, func(source mautrix.EventSource, evt *event.Event) {
+		olmMachine.HandleMemberEvent(evt)
+	})
+
+	return mclient, nil
+}
+
+func (c *mnotifyClient) syncCallback(resp *mautrix.RespSync, since string) bool {
+	c.olmMachine.ProcessSyncResponse(resp, since)
+	if err := c.olmMachine.CryptoStore.Flush(); err != nil {
+		fmt.Println(err)
+	}
+	return true
+}
+
+type cryptoLogger struct {
+	level int
+}
+
+func (l *cryptoLogger) Error(message string, args ...interface{}) {
+	if l.level > 0 {
+		fmt.Printf("error: "+message, args...)
+	}
+}
+
+func (l *cryptoLogger) Warn(message string, args ...interface{}) {
+	if l.level > 1 {
+		fmt.Printf("warn: "+message, args...)
+	}
+}
+
+func (l *cryptoLogger) Debug(message string, args ...interface{}) {
+	if l.level > 2 {
+		fmt.Printf("debug: "+message, args...)
+	}
+}
+
+func (l *cryptoLogger) Trace(message string, args ...interface{}) {
+	if l.level > 3 {
+		fmt.Printf("trace: "+message, args...)
+	}
 }
 
 func main() {
@@ -48,6 +136,7 @@ func main() {
 		syncCmd           = syncCommand{globalOpts: &globalOpts}
 		userCmd           = userCommand{globalOpts: &globalOpts}
 	)
+
 	conf, confErr := loadConfig()
 	var (
 		rootCobraCmd = &cobra.Command{

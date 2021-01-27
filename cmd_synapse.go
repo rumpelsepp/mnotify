@@ -115,3 +115,14 @@ func (c *synapseUserCommand) run(cmd *cobra.Command, args []string) error {
 // 	eventID    id.EventID
 // 	status     bool
 // }
+//
+// func (c *synapsePurgeHistory) run(cmd *cobra.Command, args []string) error {
+// 	var (
+// 		client = c.globalOpts.client
+// 		u      string
+// 	)
+//
+// 		client.Prefix = mautrix.URLPath{"_synapse", "admin", "v1"}
+// 		u = client.BuildURL("purge_history", c.globalOpts.userID)
+// 		u = client.BuildURL("purge_history_status", c.globalOpts.userID)
+// }

@@ -48,7 +48,7 @@ func (c *loginCommand) run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := loginPassword(client, user, string(password))
+	resp, err := loginPassword(client.Client, user, string(password))
 	if err != nil {
 		return err
 	}

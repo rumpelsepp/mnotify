@@ -26,6 +26,14 @@ func configPath() string {
 	return filepath.Join(p, "mnotify", "config.toml")
 }
 
+func stateDir() string {
+	p, err := os.UserHomeDir()
+	if err != nil {
+		panic(err)
+	}
+	return filepath.Join(p, ".local", "share", "mnotify")
+}
+
 var globalConfigPath = "/etc/mnotify/config.toml"
 
 func loadConfig() (*config, error) {
