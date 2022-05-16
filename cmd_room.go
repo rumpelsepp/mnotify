@@ -165,12 +165,12 @@ func (c *roomCommand) run(cmd *cobra.Command, args []string) error {
 			dieNoRoomID()
 		}
 		fmt.Println("This subcommand is currently broken")
-		resp, err := client.Messages(roomID, "", "", 'f', int(c.number))
-		if err != nil {
-			return err
-		}
-		// FIXME: This response is always empty. What am I doing wrong?
-		fmt.Printf("%+v\n", resp)
+		// resp, err := client.Messages(roomID, "", "", 'f', int(c.number))
+		// if err != nil {
+		// 	return err
+		// }
+		// // FIXME: This response is always empty. What am I doing wrong?
+		// fmt.Printf("%+v\n", resp)
 	case c.forget:
 		if roomID == "" {
 			dieNoRoomID()
