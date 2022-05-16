@@ -12,9 +12,7 @@ $ make
 
 ## Contribute
 
-There is a [mailing list](https://lists.sr.ht/~rumpelsepp/public-inbox).
-Instructions about sending patches are at this [tutorial webpage](https://git-send-email.io/).
-Just use the builtin functionality of git. :)
+Just open a merge request on Github. :)
 
 ## Get Started
 
