@@ -6,7 +6,7 @@ require (
 	github.com/pelletier/go-toml v1.9.5
 	github.com/spf13/cobra v1.4.0
 	golang.org/x/crypto v0.0.0-20220513210258-46612604a0f9
-	maunium.net/go/mautrix v0.10.12
+	maunium.net/go/mautrix v0.11.0
 	modernc.org/sqlite v1.17.2
 )
 
@@ -20,12 +20,12 @@ require (
 	github.com/mattn/go-isatty v0.0.14 // indirect
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20200410134404-eec4a21b6bb0 // indirect
-	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/tidwall/gjson v1.14.1 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/tidwall/sjson v1.2.4 // indirect
+	github.com/yuin/goldmark v1.4.12 // indirect
 	golang.org/x/mod v0.6.0-dev.0.20220106191415-9b9b3d81d5e3 // indirect
 	golang.org/x/net v0.0.0-20220516133312-45b265872317 // indirect
 	golang.org/x/sys v0.0.0-20220513210249-45d2b4557a2a // indirect
