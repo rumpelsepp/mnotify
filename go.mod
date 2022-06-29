@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/pelletier/go-toml v1.9.5
-	github.com/spf13/cobra v1.4.0
+	github.com/spf13/cobra v1.5.0
 	golang.org/x/crypto v0.0.0-20220513210258-46612604a0f9
 	maunium.net/go/mautrix v0.11.0
 	modernc.org/sqlite v1.17.3
