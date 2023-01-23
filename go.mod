@@ -7,7 +7,7 @@ require (
 	github.com/spf13/cobra v1.6.1
 	golang.org/x/crypto v0.5.0
 	maunium.net/go/mautrix v0.12.4
-	modernc.org/sqlite v1.20.2
+	modernc.org/sqlite v1.20.3
 )
 
 require (
