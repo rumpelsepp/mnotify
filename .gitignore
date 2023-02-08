@@ -1,2 +1,7 @@
 /main
 /mnotify
+
+
+# Added by cargo
+
+/target

@@ -1,0 +1,23 @@
+[package]
+name = "mnotify"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.69"
+atty = "0.2.14"
+clap = { version = "4.1.1", features = ["derive"] }
+clap-verbosity-flag = "2.0.0"
+matrix-sdk = { version = "0.6.2", features = ["rustls-tls", "e2e-encryption", "sled", "markdown", "socks", "anyhow", "qrcode"], default-features = false }
+rpassword = "7.2.0"
+serde = { version = "1.0.152", features = ["derive"] }
+serde_json = "1.0.92"
+tokio = { version = "1.24.2", features = ["full"] }
+toml = "0.7.2"
+xdg = "2.4.1"
+
+[[bin]]
+name = "mn"
+path = "src/main.rs"

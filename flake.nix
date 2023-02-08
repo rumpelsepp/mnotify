@@ -9,11 +9,7 @@
     in {
       devShell.x86_64-linux = pkgs.mkShell {
         buildInputs = with pkgs; [
-          go_1_19
-          gnumake
-          gopls
-          gotools
-          efm-langserver
+          cargo rust-analyzer rustc gcc rustfmt pkgconfig openssl
         ];
       };
       formatter.x86_64-linux = pkgs.nixpkgs-fmt;
