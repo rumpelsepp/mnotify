@@ -1,7 +1,0 @@
-#!/bin/sh
-
-while getopts "B:b:C:d:h:iL:N:nO:o:p:q:R:UV:vX:F:f:r:t" _; do
-    true
-done
-
-exec mnotify send
