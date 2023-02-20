@@ -7,15 +7,20 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.69"
-atty = "0.2.14"
-clap = { version = "4.1.4", features = ["derive"] }
+clap = { version = "4.1.4", features = ["derive", "cargo"] }
 clap-verbosity-flag = "2.0.0"
+dialoguer = "0.10.3"
+is-terminal = "0.4.3"
+keyring = "1.2.1"
+log = "0.4.17"
 matrix-sdk = { version = "0.6.2", features = ["rustls-tls", "e2e-encryption", "sled", "markdown", "socks", "anyhow", "qrcode"], default-features = false }
 rpassword = "7.2.0"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.92"
 tokio = { version = "1.25.0", features = ["full"] }
 toml = "0.7.2"
+tracing = "0.1.37"
+tracing-subscriber = "0.3.16"
 xdg = "2.4.1"
 
 [[bin]]

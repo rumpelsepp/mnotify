@@ -9,7 +9,7 @@
     in {
       devShell.x86_64-linux = pkgs.mkShell {
         buildInputs = with pkgs; [
-          cargo rust-analyzer rustc gcc rustfmt pkgconfig openssl
+          cargo rust-analyzer rustc gcc rustfmt clippy
         ];
       };
       formatter.x86_64-linux = pkgs.nixpkgs-fmt;
