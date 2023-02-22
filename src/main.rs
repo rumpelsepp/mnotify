@@ -1,17 +1,16 @@
 use std::env;
 
-use anyhow::{anyhow, bail};
+use anyhow::bail;
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
 use matrix_sdk::config::SyncSettings;
-use matrix_sdk::deserialized_responses::SyncResponse;
+use matrix_sdk::deserialized_responses::SyncTimelineEvent;
 use matrix_sdk::room::Room;
-use matrix_sdk::ruma::events::room::message::OriginalSyncRoomMessageEvent;
+use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
+use matrix_sdk::ruma::events::receipt::ReceiptThread;
+use matrix_sdk::ruma::{events::AnySyncTimelineEvent, serde::Raw};
 use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId, OwnedUserId};
-use matrix_sdk::LoopCtrl;
-use serde::Serialize;
 
-// mod sas;
 mod client;
 mod config;
 mod session;
@@ -46,6 +45,7 @@ enum Command {
         #[arg(short, long, default_value = CRATE_NAME)]
         device_name: String,
     },
+    Logout {},
     Redact {
         #[arg(short, long, required = true)]
         room_id: OwnedRoomId,
@@ -56,6 +56,7 @@ enum Command {
         #[arg(long)]
         reason: Option<String>,
     },
+    Verify {},
     Send {
         #[arg(short, long)]
         markdown: bool,
@@ -63,50 +64,28 @@ enum Command {
         #[arg(short, long, required = true)]
         room_id: OwnedRoomId,
 
-        message: String,
+        message: Option<String>,
     },
     Sync {
         #[arg(long)]
         room_id: Option<OwnedRoomId>,
-
-        #[arg(short, long)]
-        raw: bool,
     },
     Whoami,
 }
 
-async fn on_room_message(event: OriginalSyncRoomMessageEvent, room: Room) -> anyhow::Result<()> {
+async fn on_room_message(event: Raw<AnySyncTimelineEvent>, room: Room) -> anyhow::Result<()> {
     let Room::Joined(room) = room else {return Ok(())};
 
-    room.read_receipt(&event.event_id).await?;
+    let event: SyncTimelineEvent = event.into();
+    let event_id = event.event_id();
 
-    {
-        #[derive(Serialize)]
-        struct Output {
-            event: OriginalSyncRoomMessageEvent,
-            room_id: String,
-        }
-
-        let out = Output {
-            event,
-            room_id: room.room_id().to_string(),
-        };
-
-        println!("{}", serde_json::to_string(&out)?);
-        Ok(())
+    if let Some(event_id) = event_id {
+        room.send_single_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, event_id)
+            .await?;
     }
-}
 
-async fn raw_sync_callback(event: SyncResponse) -> LoopCtrl {
-    let out = match serde_json::to_string(&event) {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::error!("corrupt event: {:?}", e);
-            return LoopCtrl::Break;
-        }
-    };
-    println!("{}", out);
-    LoopCtrl::Continue
+    println!("{}", serde_json::to_string(&event)?);
+    Ok(())
 }
 
 fn convert_filter(filter: log::LevelFilter) -> tracing_subscriber::filter::LevelFilter {
@@ -167,13 +146,26 @@ async fn main() -> anyhow::Result<()> {
                 Some(p) if p == "-" => terminal::read_password()?,
                 Some(p) => p,
             };
-            client.login_password(&password).await?;
 
+            let res = client.login_password(&password).await;
+            if let Err(e) = res {
+                if terminal::confirm("login failed: delete all state?").await? {
+                    // TODO: log this
+                    let _ = client.delete_session();
+                    let _ = client.delete_state_store();
+                }
+                bail!("login failed: {}", e);
+            }
+
+            // TODO: Do not overwrite stuff.
             Config {
                 user_id,
                 device_name: Some(device_name),
             }
             .dump()?;
+        }
+        Command::Logout {} => {
+            client.logout().await?;
         }
         Command::Redact {
             room_id,
@@ -184,15 +176,17 @@ async fn main() -> anyhow::Result<()> {
                 .redact(&room_id, &event_id, reason.as_ref().map(String::as_ref))
                 .await?;
         }
+        Command::Verify {} => {
+            client.sync_sas_verification().await?;
+        }
         Command::Send {
             markdown,
             room_id,
             message,
         } => {
-            let message = if message == "-" {
-                terminal::read_stdin_to_string()?
-            } else {
-                message
+            let message = match message {
+                Some(message) => message,
+                None => terminal::read_stdin_to_string()?,
             };
 
             if markdown {
@@ -205,14 +199,7 @@ async fn main() -> anyhow::Result<()> {
                     .await?;
             }
         }
-        Command::Sync { room_id, raw } => {
-            if raw {
-                client
-                    .sync_with_callback(sync_settings, raw_sync_callback)
-                    .await?;
-                return Ok(());
-            }
-
+        Command::Sync { room_id } => {
             if let Some(ref room_id) = room_id {
                 client.add_room_event_handler(room_id, on_room_message);
             } else {

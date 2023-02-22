@@ -4,7 +4,7 @@ use std::io;
 use std::path::PathBuf;
 
 use anyhow::bail;
-use matrix_sdk::ruma::{OwnedDeviceId, OwnedUserId};
+use matrix_sdk::ruma::OwnedUserId;
 use serde::{Deserialize, Serialize};
 
 use super::CRATE_NAME;

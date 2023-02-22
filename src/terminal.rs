@@ -1,6 +1,7 @@
 use std::io::{self, Read};
 
 use is_terminal::IsTerminal;
+use prompts::{confirm::ConfirmPrompt, Prompt};
 
 pub(crate) fn read_password() -> io::Result<String> {
     let mut res = String::new();
@@ -21,4 +22,11 @@ pub(crate) fn read_stdin_to_string() -> io::Result<String> {
     let mut buf = String::new();
     io::stdin().read_to_string(&mut buf)?;
     Ok(buf)
+}
+
+pub(crate) async fn confirm(question: &str) -> anyhow::Result<bool> {
+    match ConfirmPrompt::new(question).run().await? {
+        Some(res) => Ok(res),
+        None => Ok(false),
+    }
 }

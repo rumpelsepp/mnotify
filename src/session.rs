@@ -77,3 +77,22 @@ pub(crate) fn persist_session(
         persist_session_keyring(user_id, session)
     }
 }
+
+fn delete_session_json(path: impl AsRef<Path>) -> anyhow::Result<()> {
+    fs::remove_file(path)?;
+    Ok(())
+}
+
+fn delete_session_keyring(user_id: impl AsRef<UserId>) -> anyhow::Result<()> {
+    let entry = keyring::Entry::new(CRATE_NAME, user_id.as_ref().as_str());
+    entry.delete_password()?;
+    Ok(())
+}
+
+pub(crate) fn delete_session(user_id: impl AsRef<UserId>) -> anyhow::Result<()> {
+    if env::var("MN_NO_KEYRING").is_ok() {
+        delete_session_json(session_json_path(user_id)?)
+    } else {
+        delete_session_keyring(user_id)
+    }
+}

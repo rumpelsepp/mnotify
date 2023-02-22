@@ -10,10 +10,12 @@ anyhow = "1.0.69"
 clap = { version = "4.1.4", features = ["derive", "cargo"] }
 clap-verbosity-flag = "2.0.0"
 dialoguer = "0.10.3"
+futures = "0.3.26"
 is-terminal = "0.4.3"
 keyring = "1.2.1"
 log = "0.4.17"
-matrix-sdk = { version = "0.6.2", features = ["rustls-tls", "e2e-encryption", "sled", "markdown", "socks", "anyhow", "qrcode"], default-features = false }
+matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main" , features = ["rustls-tls", "e2e-encryption", "sled", "markdown", "socks", "anyhow", "qrcode"], default-features = false }
+prompts = "0.1.0"
 rpassword = "7.2.0"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.92"
