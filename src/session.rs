@@ -49,9 +49,9 @@ fn persist_session_json(path: impl AsRef<Path>, session: &Session) -> anyhow::Re
         out.push('\n');
     }
 
-    fs::write(path, &out)?;
+    fs::write(&path, &out)?;
 
-    let mut perms = fs::metadata(&out)?.permissions();
+    let mut perms = fs::metadata(&path)?.permissions();
 
     let mode = 0o600;
     if perms.mode() != mode {
