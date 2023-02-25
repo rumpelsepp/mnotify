@@ -143,7 +143,6 @@ async fn main() -> anyhow::Result<()> {
 
             let password = match password {
                 None => terminal::read_password()?,
-                Some(p) if p == "-" => terminal::read_password()?,
                 Some(p) => p,
             };
 

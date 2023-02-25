@@ -130,6 +130,7 @@ async fn sas_verification_handler(sas: SasVerification) {
             } => {
                 println!("Confirm that the emojis match!");
                 println!("{}", format_emojis(emojis.unwrap().emojis));
+
                 if terminal::confirm("confirm").await.unwrap() {
                     sas.confirm().await.unwrap();
                 } else {

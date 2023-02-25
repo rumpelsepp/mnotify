@@ -20,10 +20,10 @@ Obtain a fresh matrix user account on an arbitrary homeserver.
 First, create a login.
 
 Be aware to **always** use the complete matrix id including the domain, e.g. `@user:example.org`.
-`-p -` reads the password from stdin or interactively from the terminal.
+Without the `-p` flag, `mn` reads the password from stdin or interactively from the terminal.
 
 ```
-$ mn login -p - @user:example.org
+$ mn login @user:example.org
 ```
 
 The access token is stored in the system keyring.
