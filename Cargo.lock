@@ -699,12 +699,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "discard"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "212d0f5754cb6769937f4501cc0e67f4f4483c8d2c3e1e922ee9edbe4ab4c7c0"
-
-[[package]]
 name = "displaydoc"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -808,6 +802,18 @@ name = "event-listener"
 version = "2.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0206175f82b8d6bf6652ff7d71a1e27fd2e4efde587fd368662814d6ec1d9ce0"
+
+[[package]]
+name = "eyeball"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3609348664c9c1b07d9ff3933a466beaa4d197fb393b5d41ffda349458867626"
+dependencies = [
+ "futures-core",
+ "readlock",
+ "tokio",
+ "tokio-stream",
+]
 
 [[package]]
 name = "eyeball-im"
@@ -949,19 +955,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "futures-signals"
-version = "0.3.31"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3acc659ba666cff13fdf65242d16428f2f11935b688f82e4024ad39667a5132"
-dependencies = [
- "discard",
- "futures-channel",
- "futures-core",
- "futures-util",
- "pin-project",
 ]
 
 [[package]]
@@ -1250,6 +1243,7 @@ dependencies = [
  "bitmaps",
  "rand_core 0.6.4",
  "rand_xoshiro",
+ "serde",
  "sized-chunks",
  "typenum",
  "version_check",
@@ -1503,7 +1497,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk"
 version = "0.6.2"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#64ec5ec5619527e811cc0e6549840c61a39608fa"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#b7b86fa95b326f6d4745e09e5cd01d139cc7d1ae"
 dependencies = [
  "anyhow",
  "anymap2",
@@ -1515,9 +1509,9 @@ dependencies = [
  "bytesize",
  "dashmap",
  "event-listener",
+ "eyeball",
  "eyeball-im",
  "futures-core",
- "futures-signals",
  "futures-util",
  "gloo-timers",
  "http",
@@ -1544,13 +1538,13 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-base"
 version = "0.6.1"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#64ec5ec5619527e811cc0e6549840c61a39608fa"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#b7b86fa95b326f6d4745e09e5cd01d139cc7d1ae"
 dependencies = [
  "async-stream",
  "async-trait",
  "dashmap",
+ "eyeball",
  "futures-core",
- "futures-signals",
  "futures-util",
  "matrix-sdk-common",
  "matrix-sdk-crypto",
@@ -1567,7 +1561,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-common"
 version = "0.6.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#64ec5ec5619527e811cc0e6549840c61a39608fa"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#b7b86fa95b326f6d4745e09e5cd01d139cc7d1ae"
 dependencies = [
  "async-lock",
  "futures-core",
@@ -1584,7 +1578,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-crypto"
 version = "0.6.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#64ec5ec5619527e811cc0e6549840c61a39608fa"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#b7b86fa95b326f6d4745e09e5cd01d139cc7d1ae"
 dependencies = [
  "aes 0.8.2",
  "async-trait",
@@ -1595,8 +1589,8 @@ dependencies = [
  "ctr",
  "dashmap",
  "event-listener",
+ "eyeball",
  "futures-core",
- "futures-signals",
  "futures-util",
  "hmac 0.12.1",
  "matrix-sdk-common",
@@ -1617,7 +1611,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-indexeddb"
 version = "0.2.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#64ec5ec5619527e811cc0e6549840c61a39608fa"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#b7b86fa95b326f6d4745e09e5cd01d139cc7d1ae"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1642,7 +1636,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-qrcode"
 version = "0.4.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#64ec5ec5619527e811cc0e6549840c61a39608fa"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#b7b86fa95b326f6d4745e09e5cd01d139cc7d1ae"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
@@ -1655,7 +1649,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-sled"
 version = "0.2.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#64ec5ec5619527e811cc0e6549840c61a39608fa"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#b7b86fa95b326f6d4745e09e5cd01d139cc7d1ae"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1679,7 +1673,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-store-encryption"
 version = "0.2.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#64ec5ec5619527e811cc0e6549840c61a39608fa"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?branch=main#b7b86fa95b326f6d4745e09e5cd01d139cc7d1ae"
 dependencies = [
  "blake3",
  "chacha20poly1305",
@@ -2088,26 +2082,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "478c572c3d73181ff3c2539045f6eb99e5491218eae919370993b890cdbdd98e"
 
 [[package]]
-name = "pin-project"
-version = "1.0.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad29a609b6bcd67fee905812e544992d216af9d755757c05ed2d0e15a74c6ecc"
-dependencies = [
- "pin-project-internal",
-]
-
-[[package]]
-name = "pin-project-internal"
-version = "1.0.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "069bdb1e05adc7a8990dce9cc75370895fbe4e3d58b9b73bf1aee56359344a55"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "pin-project-lite"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2355,6 +2329,12 @@ checksum = "6f97cdb2a36ed4183de61b2f824cc45c9f1037f28afe0a322e9fff4c108b5aaa"
 dependencies = [
  "rand_core 0.6.4",
 ]
+
+[[package]]
+name = "readlock"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a8f0cb425ba44d6bde0d063097aae68a2ce31e1d5359e96427704f33f4f73d9"
 
 [[package]]
 name = "redox_syscall"
@@ -3355,7 +3335,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 [[package]]
 name = "vodozemac"
 version = "0.3.0"
-source = "git+https://github.com/matrix-org/vodozemac?rev=12b24e909107c1fac23245376f294eaf48ba186a#12b24e909107c1fac23245376f294eaf48ba186a"
+source = "git+https://github.com/matrix-org/vodozemac?rev=fb609ca1e4df5a7a818490ae86ac694119e41e71#fb609ca1e4df5a7a818490ae86ac694119e41e71"
 dependencies = [
  "aes 0.8.2",
  "arrayvec",
