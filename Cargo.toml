@@ -11,7 +11,7 @@ clap = { version = "4.1.6", features = ["derive", "cargo"] }
 clap-verbosity-flag = "2.0.0"
 dialoguer = "0.10.3"
 futures = "0.3.26"
-is-terminal = "0.4.3"
+is-terminal = "0.4.4"
 keyring = "2.0.1"
 log = "0.4.17"
 matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main" , features = ["rustls-tls", "e2e-encryption", "sled", "markdown", "socks", "anyhow", "qrcode"], default-features = false }
