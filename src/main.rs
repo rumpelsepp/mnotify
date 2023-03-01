@@ -15,6 +15,7 @@ mod client;
 mod config;
 mod session;
 mod terminal;
+mod util;
 
 use crate::client::Client;
 use crate::config::Config;
@@ -88,24 +89,13 @@ async fn on_room_message(event: Raw<AnySyncTimelineEvent>, room: Room) -> anyhow
     Ok(())
 }
 
-fn convert_filter(filter: log::LevelFilter) -> tracing_subscriber::filter::LevelFilter {
-    match filter {
-        log::LevelFilter::Off => tracing_subscriber::filter::LevelFilter::OFF,
-        log::LevelFilter::Error => tracing_subscriber::filter::LevelFilter::ERROR,
-        log::LevelFilter::Warn => tracing_subscriber::filter::LevelFilter::WARN,
-        log::LevelFilter::Info => tracing_subscriber::filter::LevelFilter::INFO,
-        log::LevelFilter::Debug => tracing_subscriber::filter::LevelFilter::DEBUG,
-        log::LevelFilter::Trace => tracing_subscriber::filter::LevelFilter::TRACE,
-    }
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
     let sync_settings = SyncSettings::default().full_state(args.full_state);
 
     tracing_subscriber::fmt()
-        .with_max_level(convert_filter(args.verbose.log_level_filter()))
+        .with_max_level(util::convert_filter(args.verbose.log_level_filter()))
         .init();
 
     let client = match args.command {
