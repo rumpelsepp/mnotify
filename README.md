@@ -56,3 +56,32 @@ or
 ```
 $ echo "Hello. :)" | mn send -r "ROOM_ID"
 ```
+
+### Technical Stuff
+
+#### Environment Variables
+
+#### `MN_NO_KEYRING`
+
+`mnotify` uses the system keyring using the [Secret Service API](https://specifications.freedesktop.org/secret-service/latest/).
+If that is not desired, this variable can be set to disable the usage of the system keyring.
+Instead a file `session.json` will be used for storing secrets.
+I hope, you know what you're doing, be warned!
+
+#### Files
+
+`mnotify` conforms to the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html).
+
+##### `$XDG_STATE_HOME/mnotify/state.json`
+
+Storing required state information, such as the current user.
+
+##### `$XDG_STATE_HOME/mnotify/$USER_ID/session.json`
+
+Used for storing secrets if `$MN_NO_KEYRING` is set.
+
+##### `$XDG_STATE_HOME/mnotify/$USER_ID/state.$EXT`
+
+The state store, for e.g. E2EE keys or similar.
+`$EXT` is the used database system; currently `sled` is used.
+However, the matrix-sdk authors are switching to `sqlite`, so this might change.
