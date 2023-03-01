@@ -1,5 +1,7 @@
 # mnotify
 
+ATTENTION: Currently under development; expect breakage.
+
 `mnotify` is a simple cli for the [matrix](https://matrix.org) chat system.
 It was developed for the use case of sending notifications from a headless server.
 The binary is called `mn`.
