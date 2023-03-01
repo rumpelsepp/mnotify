@@ -61,7 +61,7 @@ $ echo "Hello. :)" | mn send -r "ROOM_ID"
 
 #### Environment Variables
 
-#### `MN_NO_KEYRING`
+##### `MN_NO_KEYRING`
 
 `mnotify` uses the system keyring using the [Secret Service API](https://specifications.freedesktop.org/secret-service/latest/).
 If that is not desired, this variable can be set to disable the usage of the system keyring.
