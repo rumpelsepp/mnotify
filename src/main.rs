@@ -37,8 +37,9 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Delete session store and secrets
+    /// Delete session store and secrets (dangerous!)
     Clean {},
+    /// Login to a homeserver and create a session store
     Login {
         user_id: OwnedUserId,
 
@@ -48,7 +49,9 @@ enum Command {
         #[arg(short, long, default_value = CRATE_NAME)]
         device_name: String,
     },
+    /// Logout and delete all state
     Logout {},
+    /// Redact a specific event
     Redact {
         #[arg(short, long, required = true)]
         room_id: OwnedRoomId,
@@ -59,7 +62,9 @@ enum Command {
         #[arg(long)]
         reason: Option<String>,
     },
+    /// React to emojic verification requests
     Verify {},
+    /// Send a message to a room
     Send {
         #[arg(short, long)]
         markdown: bool,
@@ -69,10 +74,12 @@ enum Command {
 
         message: Option<String>,
     },
+    /// Run sync and print all events as json
     Sync {
         #[arg(long)]
         room_id: Option<OwnedRoomId>,
     },
+    /// Ask the homeserver who we are
     Whoami,
 }
 
