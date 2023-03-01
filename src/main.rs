@@ -8,6 +8,7 @@ use matrix_sdk::deserialized_responses::SyncTimelineEvent;
 use matrix_sdk::room::Room;
 use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
 use matrix_sdk::ruma::events::receipt::ReceiptThread;
+use matrix_sdk::ruma::presence::PresenceState;
 use matrix_sdk::ruma::{events::AnySyncTimelineEvent, serde::Raw};
 use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId, OwnedUserId};
 
@@ -30,6 +31,9 @@ struct Cli {
 
     #[arg(short, long)]
     full_state: bool,
+
+    #[arg(short, long)]
+    presense: PresenceState,
 
     #[command(subcommand)]
     command: Command,
@@ -101,7 +105,9 @@ async fn on_room_message(event: Raw<AnySyncTimelineEvent>, room: Room) -> anyhow
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
-    let sync_settings = SyncSettings::default().full_state(args.full_state);
+    let sync_settings = SyncSettings::default()
+        .full_state(args.full_state)
+        .set_presence(args.presense);
 
     tracing_subscriber::fmt()
         .with_max_level(util::convert_filter(args.verbose.log_level_filter()))
