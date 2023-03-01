@@ -187,10 +187,14 @@ impl Client {
         Ok(self)
     }
 
-    pub(crate) async fn logout(&self) -> anyhow::Result<()> {
-        self.inner.logout().await?;
+    pub(crate) fn clean(&self) -> anyhow::Result<()> {
         self.delete_session()?;
         self.delete_state_store()
+    }
+
+    pub(crate) async fn logout(&self) -> anyhow::Result<()> {
+        self.inner.logout().await?;
+        self.clean()
     }
 
     pub(crate) fn delete_session(&self) -> anyhow::Result<()> {

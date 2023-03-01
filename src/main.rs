@@ -37,6 +37,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Delete session store and secrets
+    Clean {},
     Login {
         user_id: OwnedUserId,
 
@@ -118,6 +120,9 @@ async fn main() -> anyhow::Result<()> {
     };
 
     match args.command {
+        Command::Clean {} => {
+            client.clean()?;
+        }
         Command::Login {
             user_id,
             device_name,
