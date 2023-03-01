@@ -32,7 +32,7 @@ struct Cli {
     #[arg(short, long)]
     full_state: bool,
 
-    #[arg(short, long)]
+    #[arg(short, long, default_value = "online")]
     presense: PresenceState,
 
     #[command(subcommand)]

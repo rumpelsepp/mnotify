@@ -28,3 +28,7 @@ xdg = "2.4.1"
 [[bin]]
 name = "mn"
 path = "src/main.rs"
+
+[dev-dependencies]
+assert_cmd = "2.0.8"
+predicates = "2.1.5"

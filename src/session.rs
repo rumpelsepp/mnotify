@@ -29,7 +29,7 @@ fn load_session_json(path: impl AsRef<Path>) -> anyhow::Result<Option<Session>> 
 }
 
 fn load_session_keyring(user_id: impl AsRef<UserId>) -> anyhow::Result<Option<Session>> {
-    let entry = keyring::Entry::new(CRATE_NAME, user_id.as_ref().as_str());
+    let entry = keyring::Entry::new(CRATE_NAME, user_id.as_ref().as_str())?;
     // TODO: Handle None case.
     let raw = entry.get_password()?;
     Ok(Some(serde_json::from_str(&raw)?))
@@ -62,7 +62,7 @@ fn persist_session_json(path: impl AsRef<Path>, session: &Session) -> anyhow::Re
 }
 
 fn persist_session_keyring(user_id: impl AsRef<UserId>, session: &Session) -> anyhow::Result<()> {
-    let entry = keyring::Entry::new(CRATE_NAME, user_id.as_ref().as_str());
+    let entry = keyring::Entry::new(CRATE_NAME, user_id.as_ref().as_str())?;
     entry.set_password(&serde_json::to_string(session)?)?;
     Ok(())
 }
@@ -84,7 +84,7 @@ fn delete_session_json(path: impl AsRef<Path>) -> anyhow::Result<()> {
 }
 
 fn delete_session_keyring(user_id: impl AsRef<UserId>) -> anyhow::Result<()> {
-    let entry = keyring::Entry::new(CRATE_NAME, user_id.as_ref().as_str());
+    let entry = keyring::Entry::new(CRATE_NAME, user_id.as_ref().as_str())?;
     entry.delete_password()?;
     Ok(())
 }
