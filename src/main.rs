@@ -150,11 +150,6 @@ async fn main() -> anyhow::Result<()> {
 
             let res = client.login_password(&password).await;
             if let Err(e) = res {
-                if terminal::confirm("login failed: delete all state?").await? {
-                    // TODO: log this
-                    let _ = client.delete_session();
-                    let _ = client.delete_state_store();
-                }
                 bail!("login failed: {}", e);
             }
 
