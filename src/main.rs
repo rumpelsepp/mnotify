@@ -198,14 +198,11 @@ async fn main() -> anyhow::Result<()> {
             limit,
         } => {
             let msgs = client.messages(sync_settings, room_id, limit).await?;
-            let events: Vec<Box<RawValue>> = if state {
-                msgs.chunk
-                    .into_iter()
-                    .map(|e| e.event.into_json())
-                    .collect()
-            } else {
-                msgs.state.into_iter().map(|e| e.into_json()).collect()
-            };
+            let events: Vec<Box<RawValue>> = msgs
+                .chunk
+                .into_iter()
+                .map(|e| e.event.into_json())
+                .collect();
 
             println!("{}", serde_json::to_string(&events)?);
         }
