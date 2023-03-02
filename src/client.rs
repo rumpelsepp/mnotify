@@ -114,10 +114,7 @@ async fn sas_verification_handler(sas: SasVerification) {
     let other_user_id = sas.other_device().user_id();
     let other_device_id = sas.other_device().device_id();
 
-    println!(
-        "Starting verification with {} {}",
-        other_user_id, other_device_id,
-    );
+    println!("Starting verification with {other_user_id} {other_device_id}");
 
     // print_devices(sas.other_device().user_id(), &client).await;
     sas.accept().await.unwrap();
@@ -176,7 +173,7 @@ impl Client {
 
     pub(crate) async fn connect(&self) -> anyhow::Result<()> {
         if let Ok(Some(session)) = session::load_session(&self.user_id) {
-            self.inner.restore_session(session).await?
+            self.inner.restore_session(session).await?;
         }
 
         Ok(())
