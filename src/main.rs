@@ -201,13 +201,10 @@ async fn main() -> anyhow::Result<()> {
             let events: Vec<Box<RawValue>> = if state {
                 msgs.chunk
                     .into_iter()
-                    .map(|e| e.clone().event.into_json())
+                    .map(|e| e.event.into_json())
                     .collect()
             } else {
-                msgs.state
-                    .into_iter()
-                    .map(|e| e.clone().into_json())
-                    .collect()
+                msgs.state.into_iter().map(|e| e.into_json()).collect()
             };
 
             println!("{}", serde_json::to_string(&events)?);

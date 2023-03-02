@@ -1,0 +1,30 @@
+on: [push]
+
+name: cargo checks
+
+env:
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+            components: rustfmt, clippy
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Run cargo check
+        run: cargo check
+
+      - name: Run format check
+        run: cargo fmt --check
+
+      - name: Run Clippy
+        # run: cargo clippy --all-targets --all-features
+        run: cargo clippy

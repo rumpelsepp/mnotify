@@ -133,7 +133,7 @@ impl Meta {
 
     pub(crate) fn dump(&self) -> anyhow::Result<()> {
         let raw = serde_json::to_string(&self)?;
-        fs::write(state_path()?, &raw)?;
+        fs::write(state_path()?, raw)?;
         Ok(())
     }
 }
