@@ -319,9 +319,14 @@ impl Client {
     //         .await?)
     // }
 
-    pub(crate) async fn messages(&self, room: impl AsRef<RoomId>) -> anyhow::Result<Messages> {
+    pub(crate) async fn messages(
+        &self,
+        room: impl AsRef<RoomId>,
+        limit: u64,
+    ) -> anyhow::Result<Messages> {
         let room = self.get_joined_room(room)?;
-        let options = MessagesOptions::backward();
+        let mut options = MessagesOptions::backward();
+        options.limit = limit.try_into()?;
         room.messages(options).await.map_err(|e| anyhow!(e))
     }
 

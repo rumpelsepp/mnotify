@@ -61,8 +61,12 @@ enum Command {
         room_id: OwnedRoomId,
 
         /// Dump state events instead
-        #[arg(short, long, required = true)]
+        #[arg(short, long)]
         state: bool,
+
+        /// Only request this number of events
+        #[arg(short, long, default_value = "10")]
+        limit: u64,
     },
     /// Redact a specific event
     Redact {
@@ -178,8 +182,12 @@ async fn main() -> anyhow::Result<()> {
         Command::Logout {} => {
             client.logout().await?;
         }
-        Command::Messages { room_id, state } => {
-            let msgs = client.messages(room_id).await?;
+        Command::Messages {
+            room_id,
+            state,
+            limit,
+        } => {
+            let msgs = client.messages(room_id, limit).await?;
             let events: Vec<Box<RawValue>> = if state {
                 msgs.chunk
                     .into_iter()
