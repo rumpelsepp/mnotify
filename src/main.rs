@@ -95,20 +95,30 @@ enum Command {
     Sync {
         #[arg(long)]
         room_id: Option<OwnedRoomId>,
+
+        /// Mark all received messages as read
+        #[arg(long)]
+        receipt: bool,
     },
     /// Ask the homeserver who we are
     Whoami,
 }
 
-async fn on_room_message(event: Raw<AnySyncTimelineEvent>, room: Room) -> anyhow::Result<()> {
+async fn on_room_message(
+    event: Raw<AnySyncTimelineEvent>,
+    room: Room,
+    receipt: bool,
+) -> anyhow::Result<()> {
     let Room::Joined(room) = room else {return Ok(())};
 
     let event: SyncTimelineEvent = event.into();
     let event_id = event.event_id();
 
-    if let Some(event_id) = event_id {
-        room.send_single_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, event_id)
-            .await?;
+    if receipt {
+        if let Some(event_id) = event_id {
+            room.send_single_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, event_id)
+                .await?;
+        }
     }
 
     println!("{}", serde_json::to_string(&event)?);
@@ -234,11 +244,15 @@ async fn main() -> anyhow::Result<()> {
                     .await?;
             }
         }
-        Command::Sync { room_id } => {
+        Command::Sync { room_id, receipt } => {
             if let Some(ref room_id) = room_id {
-                client.add_room_event_handler(room_id, on_room_message);
+                client.add_room_event_handler(room_id, move |event, room| async move {
+                    on_room_message(event, room, receipt).await
+                });
             } else {
-                client.add_event_handler(on_room_message);
+                client.add_event_handler(move |event, room| async move {
+                    on_room_message(event, room, receipt).await
+                });
             }
 
             client.sync(sync_settings).await?;
