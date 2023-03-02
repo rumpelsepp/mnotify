@@ -4,7 +4,7 @@ use std::future::Future;
 use anyhow::{anyhow, bail};
 use matrix_sdk::config::SyncSettings;
 use matrix_sdk::event_handler::{EventHandler, EventHandlerHandle, EventHandlerResult, SyncEvent};
-use matrix_sdk::room;
+use matrix_sdk::room::{self, Messages, MessagesOptions};
 use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
 use matrix_sdk::ruma::{EventId, OwnedDeviceId, OwnedUserId, RoomId};
 use matrix_sdk::sync::SyncResponse;
@@ -318,6 +318,12 @@ impl Client {
     //         .get_user_devices(&self.user_id)
     //         .await?)
     // }
+
+    pub(crate) async fn messages(&self, room: impl AsRef<RoomId>) -> anyhow::Result<Messages> {
+        let room = self.get_joined_room(room)?;
+        let options = MessagesOptions::backward();
+        room.messages(options).await.map_err(|e| anyhow!(e))
+    }
 
     fn persist_session(&self) -> anyhow::Result<()> {
         let session = self.inner.session().unwrap();

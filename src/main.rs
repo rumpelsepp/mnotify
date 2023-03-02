@@ -11,6 +11,7 @@ use matrix_sdk::ruma::events::receipt::ReceiptThread;
 use matrix_sdk::ruma::presence::PresenceState;
 use matrix_sdk::ruma::{events::AnySyncTimelineEvent, serde::Raw};
 use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId, OwnedUserId};
+use serde_json::value::RawValue;
 
 mod client;
 mod session;
@@ -54,6 +55,15 @@ enum Command {
     },
     /// Logout and delete all state
     Logout {},
+    /// Dump messages of a room
+    Messages {
+        #[arg(short, long, required = true)]
+        room_id: OwnedRoomId,
+
+        /// Dump state events instead
+        #[arg(short, long, required = true)]
+        state: bool,
+    },
     /// Redact a specific event
     Redact {
         #[arg(short, long, required = true)]
@@ -167,6 +177,22 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Logout {} => {
             client.logout().await?;
+        }
+        Command::Messages { room_id, state } => {
+            let msgs = client.messages(room_id).await?;
+            let events: Vec<Box<RawValue>> = if state {
+                msgs.chunk
+                    .into_iter()
+                    .map(|e| e.clone().event.into_json())
+                    .collect()
+            } else {
+                msgs.state
+                    .into_iter()
+                    .map(|e| e.clone().into_json())
+                    .collect()
+            };
+
+            println!("{}", serde_json::to_string(&events)?);
         }
         Command::Redact {
             room_id,
