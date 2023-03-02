@@ -320,9 +320,12 @@ impl Client {
 
     pub(crate) async fn messages(
         &self,
+        sync_settings: SyncSettings,
         room: impl AsRef<RoomId>,
         limit: u64,
     ) -> anyhow::Result<Messages> {
+        self.sync_once(sync_settings).await?;
+
         let room = self.get_joined_room(room)?;
         let mut options = MessagesOptions::backward();
         options.limit = limit.try_into()?;

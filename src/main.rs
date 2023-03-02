@@ -28,7 +28,7 @@ struct Cli {
     #[command(flatten)]
     verbose: Verbosity,
 
-    /// Always request the full state during sync
+    /// Request the full state during sync
     #[arg(short, long)]
     full_state: bool,
 
@@ -197,7 +197,7 @@ async fn main() -> anyhow::Result<()> {
             state,
             limit,
         } => {
-            let msgs = client.messages(room_id, limit).await?;
+            let msgs = client.messages(sync_settings, room_id, limit).await?;
             let events: Vec<Box<RawValue>> = if state {
                 msgs.chunk
                     .into_iter()
