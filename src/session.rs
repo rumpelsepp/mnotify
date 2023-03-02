@@ -106,7 +106,7 @@ fn state_path() -> io::Result<PathBuf> {
         Ok(path) => Ok(path.into()),
         Err(_) => {
             let xdg_dirs = xdg::BaseDirectories::with_prefix(CRATE_NAME)?;
-            xdg_dirs.place_config_file("meta.json")
+            xdg_dirs.place_state_file("meta.json")
         }
     }
 }
