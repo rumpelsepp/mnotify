@@ -111,10 +111,12 @@ impl From<session::Meta> for ClientBuilder {
 }
 
 async fn sas_verification_handler(sas: SasVerification) {
+    let other_user_id = sas.other_device().user_id();
+    let other_device_id = sas.other_device().device_id();
+
     println!(
         "Starting verification with {} {}",
-        &sas.other_device().user_id(),
-        &sas.other_device().device_id()
+        other_user_id, other_device_id,
     );
 
     // print_devices(sas.other_device().user_id(), &client).await;
@@ -131,19 +133,19 @@ async fn sas_verification_handler(sas: SasVerification) {
                 println!("Confirm that the emojis match!");
                 println!("{}", format_emojis(emojis.unwrap().emojis));
 
-                if terminal::confirm("confirm").await.unwrap() {
-                    sas.confirm().await.unwrap();
-                } else {
-                    sas.cancel().await.unwrap();
-                }
+                let sas = sas.clone();
+                tokio::spawn(async move {
+                    if terminal::confirm("confirm").await.unwrap() {
+                        sas.confirm().await.unwrap();
+                    } else {
+                        sas.cancel().await.unwrap();
+                    }
+                });
             }
             SasState::Done { .. } => {
-                let device = sas.other_device();
-
                 println!(
                     "successfully verified device {} {}",
-                    device.user_id(),
-                    device.device_id(),
+                    other_user_id, other_device_id,
                 );
 
                 break;
@@ -347,6 +349,7 @@ impl Client {
             is_guest: resp.is_guest,
         })
     }
+
     pub(crate) async fn sync_sas_verification(&self) -> anyhow::Result<()> {
         self.inner.add_event_handler(
             |ev: ToDeviceKeyVerificationRequestEvent, client: MatrixClient| async move {
