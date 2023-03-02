@@ -1,10 +1,14 @@
 use std::env;
 use std::fs;
+use std::io;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
+use anyhow::bail;
+use matrix_sdk::ruma::OwnedUserId;
 use matrix_sdk::ruma::UserId;
 use matrix_sdk::Session;
+use serde::{Deserialize, Serialize};
 
 use super::CRATE_NAME;
 
@@ -94,5 +98,42 @@ pub(crate) fn delete_session(user_id: impl AsRef<UserId>) -> anyhow::Result<()> 
         delete_session_json(session_json_path(user_id)?)
     } else {
         delete_session_keyring(user_id)
+    }
+}
+
+fn state_path() -> io::Result<PathBuf> {
+    match env::var("MN_META_FILE") {
+        Ok(path) => Ok(path.into()),
+        Err(_) => {
+            let xdg_dirs = xdg::BaseDirectories::with_prefix(CRATE_NAME)?;
+            xdg_dirs.place_config_file("meta.json")
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) struct Meta {
+    pub(crate) user_id: OwnedUserId,
+    pub(crate) device_name: Option<String>,
+}
+
+impl Meta {
+    pub(crate) fn exists() -> io::Result<bool> {
+        state_path()?.try_exists()
+    }
+
+    pub(crate) fn load() -> anyhow::Result<Self> {
+        let raw = fs::read_to_string(state_path()?)?;
+        if raw.is_empty() {
+            bail!("empty file");
+        }
+
+        Ok(serde_json::from_str(&raw)?)
+    }
+
+    pub(crate) fn dump(&self) -> anyhow::Result<()> {
+        let raw = serde_json::to_string(&self)?;
+        fs::write(state_path()?, &raw)?;
+        Ok(())
     }
 }

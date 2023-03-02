@@ -13,13 +13,11 @@ use matrix_sdk::ruma::{events::AnySyncTimelineEvent, serde::Raw};
 use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId, OwnedUserId};
 
 mod client;
-mod config;
 mod session;
 mod terminal;
 mod util;
 
 use crate::client::Client;
-use crate::config::Config;
 
 const CRATE_NAME: &str = clap::crate_name!();
 
@@ -29,6 +27,7 @@ struct Cli {
     #[command(flatten)]
     verbose: Verbosity,
 
+    /// Always request the full state during sync
     #[arg(short, long)]
     full_state: bool,
 
@@ -42,7 +41,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Delete session store and secrets (dangerous!)
-    Clean {},
+    Clean { user_id: OwnedUserId },
     /// Login to a homeserver and create a session store
     Login {
         user_id: OwnedUserId,
@@ -102,6 +101,24 @@ async fn on_room_message(event: Raw<AnySyncTimelineEvent>, room: Room) -> anyhow
     Ok(())
 }
 
+async fn create_client(cmd: &Command) -> anyhow::Result<Client> {
+    match cmd {
+        Command::Login {
+            ref user_id,
+            ref device_name,
+            password: _,
+        } => {
+            Client::builder()
+                .user_id(user_id.to_owned())
+                .device_name(device_name.to_owned())
+                .build()
+                .await
+        }
+        Command::Clean { user_id } => Client::builder().user_id(user_id.to_owned()).build().await,
+        _ => Client::builder().load_meta()?.build().await?.ensure_login(),
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
@@ -113,27 +130,10 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(util::convert_filter(args.verbose.log_level_filter()))
         .init();
 
-    let client = match args.command {
-        Command::Login {
-            ref user_id,
-            ref device_name,
-            password: _,
-        } => {
-            Client::builder()
-                .user_id(user_id.to_owned())
-                .device_name(device_name.to_owned())
-                .build()
-                .await?
-        }
-        _ => Client::builder()
-            .load_config()?
-            .build()
-            .await?
-            .ensure_login()?,
-    };
+    let client = create_client(&args.command).await?;
 
     match args.command {
-        Command::Clean {} => {
+        Command::Clean { .. } => {
             client.clean()?;
         }
         Command::Login {
@@ -145,8 +145,8 @@ async fn main() -> anyhow::Result<()> {
                 bail!("already logged in");
             }
 
-            if Config::exists()? {
-                bail!("config exists");
+            if session::Meta::exists()? {
+                bail!("meta exists");
             }
 
             let password = match password {
@@ -159,8 +159,7 @@ async fn main() -> anyhow::Result<()> {
                 bail!("login failed: {}", e);
             }
 
-            // TODO: Do not overwrite stuff.
-            Config {
+            session::Meta {
                 user_id,
                 device_name: Some(device_name),
             }

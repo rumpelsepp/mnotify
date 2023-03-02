@@ -68,13 +68,17 @@ If that is not desired, this variable can be set to disable the usage of the sys
 Instead a file `session.json` will be used for storing secrets.
 I hope, you know what you're doing, be warned!
 
+##### `MN_META_FILE`
+
+Overwrite the path to `meta.json` (see below).
+
 #### Files
 
 `mnotify` conforms to the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html).
 
-##### `$XDG_STATE_HOME/mnotify/state.json`
+##### `$XDG_STATE_HOME/mnotify/meta.json`
 
-Storing required state information, such as the current user.
+Storing required meta information for the current session, such as the user.
 
 ##### `$XDG_STATE_HOME/mnotify/$USER_ID/session.json`
 

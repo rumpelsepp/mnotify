@@ -11,6 +11,7 @@ use matrix_sdk::sync::SyncResponse;
 use matrix_sdk::Client as MatrixClient;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use tracing::*;
 
 use futures::stream::StreamExt;
 use matrix_sdk::{
@@ -24,7 +25,6 @@ use matrix_sdk::{
     },
 };
 
-use crate::config::Config;
 use crate::session;
 use crate::terminal;
 use crate::CRATE_NAME;
@@ -60,9 +60,9 @@ impl ClientBuilder {
     //     config.into()
     // }
 
-    pub(crate) fn load_config(self) -> anyhow::Result<Self> {
-        let config = Config::load().map_err(|e| anyhow!("could not load config: {}", e))?;
-        Ok(Self::from(config))
+    pub(crate) fn load_meta(self) -> anyhow::Result<Self> {
+        let meta = session::Meta::load().map_err(|e| anyhow!("could not load meta.json: {}", e))?;
+        Ok(Self::from(meta))
     }
 
     pub(crate) async fn build(self) -> anyhow::Result<Client> {
@@ -100,8 +100,8 @@ impl Default for ClientBuilder {
     }
 }
 
-impl From<Config> for ClientBuilder {
-    fn from(config: Config) -> Self {
+impl From<session::Meta> for ClientBuilder {
+    fn from(config: session::Meta) -> Self {
         let device_name = config.device_name.unwrap_or_else(|| CRATE_NAME.to_string());
         Self {
             user_id: Some(config.user_id),
@@ -188,8 +188,13 @@ impl Client {
     }
 
     pub(crate) fn clean(&self) -> anyhow::Result<()> {
-        self.delete_session()?;
-        self.delete_state_store()
+        if let Err(e) = self.delete_session() {
+            error!("delete session: {}", e);
+        }
+        if let Err(e) = self.delete_state_store() {
+            error!("delete state store: {}", e);
+        }
+        Ok(())
     }
 
     pub(crate) async fn logout(&self) -> anyhow::Result<()> {
