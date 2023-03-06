@@ -48,13 +48,24 @@ Compare the emojis and confirm. Done.
 ### Send a message
 
 ```
-$ mn send -r "ROOM_ID" "Hello. :)"
+$ mn send -r "$ROOM_ID" "Hello. :)"
 ```
 
 or
 
 ```
-$ echo "Hello. :)" | mn send -r "ROOM_ID"
+$ echo "Hello. :)" | mn send -r "$ROOM_ID"
+```
+
+### Sync
+
+`--raw` prints the events as they come from the server.
+Without `--raw` only messages are printed.
+
+```
+$ mn sync --raw
+{"rooms":{"leave":{},"join":{},"invite":{}},"presence":{},"account_data":[],"to_device_events":[],"device_lists":{},"device_one_time_keys_count":{"signed_curve25519":50},"notifications":{}}
+{"rooms":{"leave":{},"join":{},"invite":{}},"presence":{"events":[{"type":"m.presence","sender":"@rumpelsepp:hackbrettl.de","content":{"presence":"online","last_active_ago":45984,"currently_active":true}},{"type":"m.presence","sender":"@develop:hackbrettl.de","content":{"presence":"online","last_active_ago":83,"currently_active":true}}]},"account_data":[],"to_device_events":[],"device_lists":{},"device_one_time_keys_count":{"signed_curve25519":50},"notifications":{}}
 ```
 
 ### Technical Stuff
