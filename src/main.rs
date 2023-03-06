@@ -181,7 +181,10 @@ async fn main() -> anyhow::Result<()> {
     let client = create_client(&args.command).await?;
 
     // TODO: Make this nicer.
-    if !matches!(args.command, Command::Clean { .. } | Command::Login { .. }) {
+    if !matches!(
+        args.command,
+        Command::Clean { .. } | Command::Login { .. } | Command::Sync { .. }
+    ) {
         client.sync_once(sync_settings.clone()).await?;
     }
 
