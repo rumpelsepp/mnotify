@@ -16,7 +16,7 @@ use matrix_sdk::sync::UnreadNotificationsCount;
 pub use matrix_sdk::sync::*;
 
 #[derive(Serialize)]
-pub struct Room {
+pub(crate) struct Room {
     pub(crate) name: Option<String>,
     pub(crate) topic: Option<String>,
     pub(crate) display_name: String,
@@ -36,7 +36,7 @@ pub struct Room {
 }
 
 #[derive(Serialize)]
-pub struct RoomMember {
+pub(crate) struct RoomMember {
     pub(crate) name: String,
     pub(crate) display_name: Option<String>,
     pub(crate) user_id: String,
@@ -46,7 +46,7 @@ pub struct RoomMember {
 
 // https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk/sync/struct.SyncResponse.html
 #[derive(Serialize)]
-pub struct SyncResponse {
+pub(crate) struct SyncResponse {
     pub(crate) rooms: Rooms,
     pub(crate) presence: Presence,
     pub(crate) account_data: Vec<Raw<AnyGlobalAccountDataEvent>>,
