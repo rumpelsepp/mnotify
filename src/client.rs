@@ -1,8 +1,10 @@
 use std::env;
 use std::fs;
 use std::ops::Deref;
+use std::path::Path;
 
 use anyhow::{anyhow, bail};
+use matrix_sdk::attachment::AttachmentConfig;
 use matrix_sdk::room::{self, Messages, MessagesOptions, Room};
 use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
 use matrix_sdk::ruma::{EventId, OwnedDeviceId, OwnedUserId, RoomId};
@@ -270,6 +272,29 @@ impl Client {
     ) -> anyhow::Result<()> {
         let event = RoomMessageEventContent::text_markdown(msg);
         self.send_message_raw(room, event).await
+    }
+
+    pub(crate) async fn send_attachment(
+        &self,
+        room: impl AsRef<RoomId>,
+        path: impl AsRef<Path>,
+    ) -> anyhow::Result<()> {
+        let path = path.as_ref();
+        let Some(file_name) = path.file_name().map(|s|s.to_str().unwrap()) else {
+            bail!("invalid file: {:?}", path);
+        };
+        let Some(extension) = path.extension().map(|s|s.to_str().unwrap()) else {
+            bail!("invalid file extension: {:?}", path);
+        };
+
+        let room = self.get_joined_room(room)?;
+        let data = fs::read(path)?;
+        let config = AttachmentConfig::default().generate_thumbnail(None);
+        let mime_type = crate::mime::guess_mime(extension);
+
+        room.send_attachment(file_name, &mime_type, data, config)
+            .await?;
+        Ok(())
     }
 
     // async fn devices(&self) -> anyhow::Result<UserDevices> {

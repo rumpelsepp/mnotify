@@ -1,4 +1,5 @@
 use std::env;
+use std::path::PathBuf;
 
 use anyhow::bail;
 use clap::{Parser, Subcommand};
@@ -16,6 +17,7 @@ use serde_json::value::RawValue;
 
 mod base64;
 mod client;
+mod mime;
 mod outputs;
 mod session;
 mod terminal;
@@ -35,6 +37,7 @@ struct Cli {
     #[arg(short, long)]
     full_state: bool,
 
+    /// Presence value while syncing
     #[arg(short, long, default_value = "online")]
     presense: PresenceState,
 
@@ -106,6 +109,10 @@ enum Command {
 
         #[arg(short, long, required = true)]
         room_id: OwnedRoomId,
+
+        /// Send file as an attachment
+        #[arg(short, long)]
+        attachment: Option<PathBuf>,
 
         /// String to send; read from stdin if omitted
         message: Option<String>,
@@ -284,17 +291,22 @@ async fn main() -> anyhow::Result<()> {
         Command::Send {
             markdown,
             room_id,
+            attachment,
             message,
         } => {
-            let message = match message {
-                Some(message) => message,
-                None => terminal::read_stdin_to_string()?,
-            };
-
-            if markdown {
-                client.send_message_md(room_id, &message).await?;
+            if let Some(path) = attachment {
+                client.send_attachment(room_id, path).await?;
             } else {
-                client.send_message(room_id, &message).await?;
+                let message = match message {
+                    Some(message) => message,
+                    None => terminal::read_stdin_to_string()?,
+                };
+
+                if markdown {
+                    client.send_message_md(room_id, &message).await?;
+                } else {
+                    client.send_message(room_id, &message).await?;
+                }
             }
         }
         Command::Sync {
