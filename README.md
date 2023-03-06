@@ -57,6 +57,12 @@ or
 $ echo "Hello. :)" | mn send -r "$ROOM_ID"
 ```
 
+or send a file
+
+```
+$ mn send -r "$ROOM_ID" --attachment "cat.jpg"
+```
+
 ### Sync
 
 `--raw` prints the events as they come from the server.
