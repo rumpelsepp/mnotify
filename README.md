@@ -70,6 +70,12 @@ $ mn sync --raw
 
 ### Technical Stuff
 
+#### Build
+
+Since matrix provides a lot of features, a debug build can be quite large (see [#18](https://github.com/rumpelsepp/mnotify/issues/18)).
+In order to reduce the binary size, consider a `--release` build, or try [LTO](https://doc.rust-lang.org/cargo/reference/profiles.html#lto).
+You can also try out the feature `native-tls` which let `mn` use the system TLS library.
+
 #### Environment Variables
 
 ##### `HTTPS_PROXY`
