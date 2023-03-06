@@ -233,6 +233,7 @@ async fn main() -> anyhow::Result<()> {
                 .chunk
                 .into_iter()
                 .map(|e| e.event.into_json())
+                .rev()
                 .collect();
 
             println!("{}", serde_json::to_string(&events)?);
