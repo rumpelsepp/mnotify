@@ -1,15 +1,12 @@
+use std::env;
 use std::fs;
-use std::future::Future;
+use std::ops::Deref;
 
 use anyhow::{anyhow, bail};
-use matrix_sdk::config::SyncSettings;
-use matrix_sdk::event_handler::{EventHandler, EventHandlerHandle, EventHandlerResult, SyncEvent};
-use matrix_sdk::room::{self, Messages, MessagesOptions};
+use matrix_sdk::room::{self, Messages, MessagesOptions, Room};
 use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
 use matrix_sdk::ruma::{EventId, OwnedDeviceId, OwnedUserId, RoomId};
-use matrix_sdk::sync::SyncResponse;
 use matrix_sdk::Client as MatrixClient;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tracing::*;
 
@@ -25,6 +22,7 @@ use matrix_sdk::{
     },
 };
 
+use crate::outputs;
 use crate::session;
 use crate::terminal;
 use crate::CRATE_NAME;
@@ -73,14 +71,20 @@ impl ClientBuilder {
             panic!("no device name set");
         };
 
-        let inner = MatrixClient::builder()
+        let mut builder = MatrixClient::builder()
             .server_name(user_id.server_name())
-            .sled_store(session::state_db_path(&user_id)?, None)
-            .build()
-            .await?;
+            .sled_store(session::state_db_path(&user_id)?, None);
+
+        if let Ok(proxy) = env::var("HTTPS_PROXY") {
+            builder = builder.proxy(proxy);
+        }
+
+        if env::var("MN_INSECURE").is_ok() {
+            builder = builder.disable_ssl_verification();
+        }
 
         let client = Client {
-            inner,
+            inner: builder.build().await?,
             user_id,
             device_name,
         };
@@ -193,6 +197,9 @@ impl Client {
         if let Err(e) = self.delete_state_store() {
             error!("delete state store: {}", e);
         }
+        if let Err(e) = fs::remove_file(session::meta_path()?) {
+            error!("delete meta.json: {}", e);
+        }
         Ok(())
     }
 
@@ -216,10 +223,6 @@ impl Client {
             .ok_or_else(|| anyhow!("no such room: {}", room.as_ref()))
     }
 
-    pub(crate) fn logged_in(&self) -> bool {
-        self.inner.logged_in()
-    }
-
     pub(crate) async fn login_password(&self, password: &str) -> anyhow::Result<()> {
         self.inner
             .login_username(&self.user_id, password)
@@ -228,42 +231,6 @@ impl Client {
             .await?;
 
         self.persist_session()
-    }
-
-    pub(crate) async fn sync_once(
-        &self,
-        sync_settings: SyncSettings,
-    ) -> anyhow::Result<SyncResponse> {
-        self.inner
-            .sync_once(sync_settings)
-            .await
-            .map_err(|e| anyhow!(e))
-    }
-
-    pub(crate) fn add_event_handler<Ev, Ctx, H>(&self, handler: H) -> EventHandlerHandle
-    where
-        Ev: SyncEvent + DeserializeOwned + Send + 'static,
-        H: EventHandler<Ev, Ctx>,
-        <H::Future as Future>::Output: EventHandlerResult,
-    {
-        self.inner.add_event_handler(handler)
-    }
-
-    pub fn add_room_event_handler<Ev, Ctx, H>(
-        &self,
-        room_id: &RoomId,
-        handler: H,
-    ) -> EventHandlerHandle
-    where
-        Ev: SyncEvent + DeserializeOwned + Send + 'static,
-        H: EventHandler<Ev, Ctx>,
-        <H::Future as Future>::Output: EventHandlerResult,
-    {
-        self.inner.add_room_event_handler(room_id, handler)
-    }
-
-    pub(crate) async fn sync(&self, sync_settings: SyncSettings) -> anyhow::Result<()> {
-        self.inner.sync(sync_settings).await.map_err(|e| anyhow!(e))
     }
 
     pub(crate) async fn redact(
@@ -279,12 +246,9 @@ impl Client {
 
     pub(crate) async fn send_message_raw(
         &self,
-        sync_settings: SyncSettings,
         room: impl AsRef<RoomId>,
         content: RoomMessageEventContent,
     ) -> anyhow::Result<()> {
-        self.sync_once(sync_settings).await?;
-
         let room = self.get_joined_room(room)?;
         room.send(content, None).await?;
         Ok(())
@@ -292,22 +256,20 @@ impl Client {
 
     pub(crate) async fn send_message(
         &self,
-        sync_settings: SyncSettings,
         room: impl AsRef<RoomId>,
         msg: &str,
     ) -> anyhow::Result<()> {
         let event = RoomMessageEventContent::text_plain(msg);
-        self.send_message_raw(sync_settings, room, event).await
+        self.send_message_raw(room, event).await
     }
 
     pub(crate) async fn send_message_md(
         &self,
-        sync_settings: SyncSettings,
         room: impl AsRef<RoomId>,
         msg: &str,
     ) -> anyhow::Result<()> {
         let event = RoomMessageEventContent::text_markdown(msg);
-        self.send_message_raw(sync_settings, room, event).await
+        self.send_message_raw(room, event).await
     }
 
     // async fn devices(&self) -> anyhow::Result<UserDevices> {
@@ -318,14 +280,64 @@ impl Client {
     //         .await?)
     // }
 
+    pub(crate) async fn query_room(
+        &self,
+        room: Room,
+        query_avatars: bool,
+        query_members: bool,
+    ) -> anyhow::Result<outputs::Room> {
+        let room_avatar = if query_avatars {
+            room.avatar(matrix_sdk::media::MediaFormat::File).await?
+        } else {
+            None
+        };
+
+        let mut room_out = outputs::Room {
+            name: room.name(),
+            topic: room.topic(),
+            display_name: room.display_name().await?.to_string(),
+            room_id: room.room_id().to_string(),
+            is_encrypted: room.is_encrypted().await?,
+            is_direct: room.is_direct(),
+            is_tombstoned: room.is_tombstoned(),
+            is_public: room.is_public(),
+            is_space: room.is_space(),
+            history_visibility: room.history_visibility().to_string(),
+            guest_access: room.guest_access().to_string(),
+            avatar: room_avatar,
+            matrix_to_uri: room.matrix_to_permalink().await?.to_string(),
+            unread_notifications: room.unread_notification_counts(),
+            members: None,
+        };
+
+        if query_members {
+            let mut members_out = vec![];
+            for member in room.members().await? {
+                let member_avatar = if query_avatars {
+                    member.avatar(matrix_sdk::media::MediaFormat::File).await?
+                } else {
+                    None
+                };
+
+                members_out.push(outputs::RoomMember {
+                    avatar: member_avatar,
+                    name: member.name().to_string(),
+                    display_name: member.display_name().map(|s| s.to_string()),
+                    user_id: member.user_id().to_string(),
+                })
+            }
+
+            room_out.members = Some(members_out);
+        }
+
+        Ok(room_out)
+    }
+
     pub(crate) async fn messages(
         &self,
-        sync_settings: SyncSettings,
         room: impl AsRef<RoomId>,
         limit: u64,
     ) -> anyhow::Result<Messages> {
-        self.sync_once(sync_settings).await?;
-
         let room = self.get_joined_room(room)?;
         let mut options = MessagesOptions::backward();
         options.limit = limit.try_into()?;
@@ -337,10 +349,6 @@ impl Client {
         session::persist_session(&self.user_id, &session)
     }
 
-    // fn load_session(&self) -> anyhow::Result<Option<Session>> {
-    //     persist::load_session(&self.user_id)
-    // }
-
     pub(crate) async fn whoami(&self) -> anyhow::Result<WhoamiResponse> {
         let resp = self.inner.whoami().await?;
         Ok(WhoamiResponse {
@@ -350,7 +358,7 @@ impl Client {
         })
     }
 
-    pub(crate) async fn sync_sas_verification(&self) -> anyhow::Result<()> {
+    pub(crate) async fn set_sas_handlers(&self) -> anyhow::Result<()> {
         self.inner.add_event_handler(
             |ev: ToDeviceKeyVerificationRequestEvent, client: MatrixClient| async move {
                 let request = client
@@ -410,8 +418,14 @@ impl Client {
             },
         );
 
-        self.inner.sync(SyncSettings::new()).await?;
-
         Ok(())
+    }
+}
+
+impl Deref for Client {
+    type Target = MatrixClient;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
 }

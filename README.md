@@ -61,6 +61,11 @@ $ echo "Hello. :)" | mn send -r "ROOM_ID"
 
 #### Environment Variables
 
+##### `HTTPS_PROXY`
+
+Use this proxy to proxy all matrix requests.
+Only http proxies are supported.
+
 ##### `MN_NO_KEYRING`
 
 `mnotify` uses the system keyring using the [Secret Service API](https://specifications.freedesktop.org/secret-service/latest/).

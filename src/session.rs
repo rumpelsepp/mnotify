@@ -101,7 +101,7 @@ pub(crate) fn delete_session(user_id: impl AsRef<UserId>) -> anyhow::Result<()> 
     }
 }
 
-fn state_path() -> io::Result<PathBuf> {
+pub(crate) fn meta_path() -> io::Result<PathBuf> {
     match env::var("MN_META_FILE") {
         Ok(path) => Ok(path.into()),
         Err(_) => {
@@ -119,11 +119,11 @@ pub(crate) struct Meta {
 
 impl Meta {
     pub(crate) fn exists() -> io::Result<bool> {
-        state_path()?.try_exists()
+        meta_path()?.try_exists()
     }
 
     pub(crate) fn load() -> anyhow::Result<Self> {
-        let raw = fs::read_to_string(state_path()?)?;
+        let raw = fs::read_to_string(meta_path()?)?;
         if raw.is_empty() {
             bail!("empty file");
         }
@@ -132,8 +132,11 @@ impl Meta {
     }
 
     pub(crate) fn dump(&self) -> anyhow::Result<()> {
-        let raw = serde_json::to_string(&self)?;
-        fs::write(state_path()?, raw)?;
+        let mut raw = serde_json::to_string(&self)?;
+        if !raw.ends_with('\n') {
+            raw += "\n";
+        }
+        fs::write(meta_path()?, raw)?;
         Ok(())
     }
 }

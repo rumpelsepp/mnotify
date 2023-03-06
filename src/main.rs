@@ -3,6 +3,7 @@ use std::env;
 use anyhow::bail;
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
+use futures::StreamExt;
 use matrix_sdk::config::SyncSettings;
 use matrix_sdk::deserialized_responses::SyncTimelineEvent;
 use matrix_sdk::room::Room;
@@ -13,7 +14,9 @@ use matrix_sdk::ruma::{events::AnySyncTimelineEvent, serde::Raw};
 use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId, OwnedUserId};
 use serde_json::value::RawValue;
 
+mod base64;
 mod client;
+mod outputs;
 mod session;
 mod terminal;
 mod util;
@@ -81,17 +84,33 @@ enum Command {
     },
     /// React to emojic verification requests
     Verify {},
+    /// Query room information
+    Rooms {
+        /// Only query this room
+        #[arg(long)]
+        room_id: Option<OwnedRoomId>,
+
+        /// Query room members
+        #[arg(long = "members")]
+        query_members: bool,
+
+        /// Query avatars
+        #[arg(long = "avatars")]
+        query_avatars: bool,
+    },
     /// Send a message to a room
     Send {
+        /// Enable markdown formatting
         #[arg(short, long)]
         markdown: bool,
 
         #[arg(short, long, required = true)]
         room_id: OwnedRoomId,
 
+        /// String to send; read from stdin if omitted
         message: Option<String>,
     },
-    /// Run sync and print all events as json
+    /// Run sync and print all events
     Sync {
         #[arg(long)]
         room_id: Option<OwnedRoomId>,
@@ -99,6 +118,10 @@ enum Command {
         /// Mark all received messages as read
         #[arg(long)]
         receipt: bool,
+
+        /// Print raw sync events as they come
+        #[arg(long)]
+        raw: bool,
     },
     /// Ask the homeserver who we are
     Whoami,
@@ -111,8 +134,9 @@ async fn on_room_message(
 ) -> anyhow::Result<()> {
     let Room::Joined(room) = room else {return Ok(())};
 
-    let event: SyncTimelineEvent = event.into();
-    let event_id = event.event_id();
+    let raw_json = event.clone().into_json();
+    let parsed_event: SyncTimelineEvent = event.into();
+    let event_id = parsed_event.event_id();
 
     if receipt {
         if let Some(event_id) = event_id {
@@ -121,7 +145,7 @@ async fn on_room_message(
         }
     }
 
-    println!("{}", serde_json::to_string(&event)?);
+    println!("{}", raw_json);
     Ok(())
 }
 
@@ -156,6 +180,11 @@ async fn main() -> anyhow::Result<()> {
 
     let client = create_client(&args.command).await?;
 
+    // TODO: Make this nicer.
+    if !matches!(args.command, Command::Clean { .. } | Command::Login { .. }) {
+        client.sync_once(sync_settings.clone()).await?;
+    }
+
     match args.command {
         Command::Clean { .. } => {
             client.clean()?;
@@ -178,8 +207,7 @@ async fn main() -> anyhow::Result<()> {
                 Some(p) => p,
             };
 
-            let res = client.login_password(&password).await;
-            if let Err(e) = res {
+            if let Err(e) = client.login_password(&password).await {
                 bail!("login failed: {}", e);
             }
 
@@ -194,10 +222,10 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Messages {
             room_id,
-            state,
+            state: _,
             limit,
         } => {
-            let msgs = client.messages(sync_settings, room_id, limit).await?;
+            let msgs = client.messages(room_id, limit).await?;
             let events: Vec<Box<RawValue>> = msgs
                 .chunk
                 .into_iter()
@@ -205,6 +233,36 @@ async fn main() -> anyhow::Result<()> {
                 .collect();
 
             println!("{}", serde_json::to_string(&events)?);
+        }
+        Command::Rooms {
+            room_id,
+            query_members,
+            query_avatars,
+        } => {
+            let out = match room_id {
+                Some(room_id) => {
+                    let Some(room) = client.get_room(&room_id) else {
+                        bail!("no such room: {}", room_id);
+                    };
+                    let output = client
+                        .query_room(room, query_avatars, query_members)
+                        .await?;
+                    serde_json::to_string(&output)?
+                }
+                None => {
+                    let mut output = vec![];
+                    for room in client.rooms() {
+                        output.push(
+                            client
+                                .query_room(room, query_avatars, query_members)
+                                .await?,
+                        );
+                    }
+                    serde_json::to_string(&output)?
+                }
+            };
+
+            println!("{}", out);
         }
         Command::Redact {
             room_id,
@@ -216,7 +274,8 @@ async fn main() -> anyhow::Result<()> {
                 .await?;
         }
         Command::Verify {} => {
-            client.sync_sas_verification().await?;
+            client.set_sas_handlers().await?;
+            client.sync(sync_settings.clone()).await?;
         }
         Command::Send {
             markdown,
@@ -229,27 +288,35 @@ async fn main() -> anyhow::Result<()> {
             };
 
             if markdown {
-                client
-                    .send_message_md(sync_settings, room_id, &message)
-                    .await?;
+                client.send_message_md(room_id, &message).await?;
             } else {
-                client
-                    .send_message(sync_settings, room_id, &message)
-                    .await?;
+                client.send_message(room_id, &message).await?;
             }
         }
-        Command::Sync { room_id, receipt } => {
-            if let Some(ref room_id) = room_id {
-                client.add_room_event_handler(room_id, move |event, room| async move {
-                    on_room_message(event, room, receipt).await
-                });
+        Command::Sync {
+            room_id,
+            receipt,
+            raw,
+        } => {
+            if raw {
+                let mut sync_stream = Box::pin(client.sync_stream(sync_settings.clone()).await);
+                while let Some(Ok(response)) = sync_stream.next().await {
+                    let resp: outputs::SyncResponse = response.into();
+                    println!("{}", serde_json::to_string(&resp)?);
+                }
             } else {
-                client.add_event_handler(move |event, room| async move {
-                    on_room_message(event, room, receipt).await
-                });
-            }
+                if let Some(ref room_id) = room_id {
+                    client.add_room_event_handler(room_id, move |event, room| async move {
+                        on_room_message(event, room, receipt).await
+                    });
+                } else {
+                    client.add_event_handler(move |event, room| async move {
+                        on_room_message(event, room, receipt).await
+                    });
+                }
 
-            client.sync(sync_settings).await?;
+                client.sync(sync_settings.clone()).await?;
+            }
         }
         Command::Whoami => {
             let resp = client.whoami().await?;
