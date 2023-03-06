@@ -14,7 +14,6 @@ anyhow = { version = "1.0.69", features = ["backtrace"] }
 base64 = "0.21.0"
 clap = { version = "4.1.6", features = ["derive", "cargo"] }
 clap-verbosity-flag = "2.0.0"
-dialoguer = "0.10.3"
 futures = "0.3.26"
 is-terminal = "0.4.4"
 keyring = "2.0.1"
