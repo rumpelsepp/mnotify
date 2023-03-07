@@ -134,6 +134,15 @@ enum Command {
     Whoami,
 }
 
+impl Command {
+    fn can_sync(&self) -> bool {
+        match self {
+            Command::Clean { .. } | Command::Login { .. } | Command::Sync { .. } => false,
+            _ => true,
+        }
+    }
+}
+
 async fn on_room_message(
     event: Raw<AnySyncTimelineEvent>,
     room: Room,
@@ -187,11 +196,7 @@ async fn main() -> anyhow::Result<()> {
 
     let client = create_client(&args.command).await?;
 
-    // TODO: Make this nicer.
-    if !matches!(
-        args.command,
-        Command::Clean { .. } | Command::Login { .. } | Command::Sync { .. }
-    ) {
+    if args.command.can_sync() {
         client.sync_once(sync_settings.clone()).await?;
     }
 
