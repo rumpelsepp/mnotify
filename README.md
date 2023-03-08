@@ -30,7 +30,7 @@ $ mn login @user:example.org
 
 The access token is stored in the system keyring.
 If you are on a remote machine without a keyring daemon, use the env variable `MN_NO_KEYRING`;
-in this case the sync token will be stored in a file `$XDG_STATE_HOME/mn/session.json`.
+in this case the sync token will be stored in a file `$XDG_STATE_HOME/mnotify/session.json`.
 
 ### SAS Verification
 
