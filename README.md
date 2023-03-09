@@ -16,6 +16,7 @@ $ cargo build
 ## Get Started
 
 Obtain a fresh matrix user account on an arbitrary homeserver.
+If you need help, checkout the matrix channel [#mnotify:hackbrettl.de](https://matrix.to/#/#mnotify:hackbrettl.de).
 
 ### Login (Password)
 
