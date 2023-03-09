@@ -10,7 +10,7 @@ The output is always JSON.
 ## Build
 
 ```
-$ cargo build
+$ cargo build [--release]
 ```
 
 ## Get Started
