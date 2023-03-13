@@ -110,6 +110,10 @@ enum Command {
         #[arg(short, long)]
         notice: bool,
 
+        /// Send a emote message
+        #[arg(short, long, conflicts_with = "notice")]
+        emote: bool,
+
         #[arg(short, long, required = true)]
         room_id: OwnedRoomId,
 
@@ -295,6 +299,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Send {
             markdown,
             notice,
+            emote,
             room_id,
             attachment,
             message,
@@ -310,11 +315,15 @@ async fn main() -> anyhow::Result<()> {
                 if markdown {
                     if notice {
                         client.send_notice_md(room_id, &message).await?;
+                    } else if emote {
+                        client.send_emote_md(room_id, &message).await?;
                     } else {
                         client.send_message_md(room_id, &message).await?;
                     }
                 } else if notice {
                     client.send_notice(room_id, &message).await?;
+                } else if emote {
+                    client.send_emote(room_id, &message).await?;
                 } else {
                     client.send_message(room_id, &message).await?;
                 }

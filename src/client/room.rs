@@ -4,7 +4,9 @@ use std::path::Path;
 use anyhow::{anyhow, bail};
 use matrix_sdk::attachment::AttachmentConfig;
 use matrix_sdk::room::{self, Messages, MessagesOptions, Room};
-use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
+use matrix_sdk::ruma::events::room::message::{
+    EmoteMessageEventContent, MessageType, RoomMessageEventContent,
+};
 use matrix_sdk::ruma::{EventId, RoomId};
 
 impl super::Client {
@@ -69,6 +71,34 @@ impl super::Client {
     ) -> anyhow::Result<()> {
         let event = RoomMessageEventContent::notice_markdown(msg);
         self.send_message_raw(room, event).await
+    }
+
+    async fn send_emote_raw(
+        &self,
+        room: impl AsRef<RoomId>,
+        content: EmoteMessageEventContent,
+    ) -> anyhow::Result<()> {
+        let msg = MessageType::Emote(content);
+        let event = RoomMessageEventContent::new(msg);
+        self.send_message_raw(room, event).await
+    }
+
+    pub(crate) async fn send_emote(
+        &self,
+        room: impl AsRef<RoomId>,
+        msg: &str,
+    ) -> anyhow::Result<()> {
+        let content = EmoteMessageEventContent::plain(msg);
+        self.send_emote_raw(room, content).await
+    }
+
+    pub(crate) async fn send_emote_md(
+        &self,
+        room: impl AsRef<RoomId>,
+        msg: &str,
+    ) -> anyhow::Result<()> {
+        let content = EmoteMessageEventContent::markdown(msg);
+        self.send_emote_raw(room, content).await
     }
 
     pub(crate) async fn send_attachment(
