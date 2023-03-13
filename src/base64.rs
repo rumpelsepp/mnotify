@@ -1,6 +1,5 @@
 use base64::Engine;
-use serde::Serialize;
-use serde::Serializer;
+use serde::{Serialize, Serializer};
 
 pub fn serialize<S: Serializer>(v: &Option<Vec<u8>>, s: S) -> Result<S::Ok, S::Error> {
     let base64 = v
