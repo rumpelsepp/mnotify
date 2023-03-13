@@ -90,6 +90,10 @@ You can also try out the feature `native-tls` which let `mn` use the system TLS 
 Use this proxy to proxy all matrix requests.
 Only http proxies are supported.
 
+##### `MN_INSECURE`
+
+Disable TLS verification.
+
 ##### `MN_NO_KEYRING`
 
 `mnotify` uses the system keyring using the [Secret Service API](https://specifications.freedesktop.org/secret-service/latest/).
