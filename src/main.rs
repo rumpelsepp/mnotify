@@ -139,14 +139,10 @@ enum Command {
 
 impl Command {
     fn can_sync(&self) -> bool {
-        if matches!(
+        !matches!(
             self,
             Command::Clean { .. } | Command::Login { .. } | Command::Sync { .. }
-        ) {
-            false
-        } else {
-            true
-        }
+        )
     }
 }
 
@@ -317,12 +313,10 @@ async fn main() -> anyhow::Result<()> {
                     } else {
                         client.send_message_md(room_id, &message).await?;
                     }
+                } else if notice {
+                    client.send_notice(room_id, &message).await?;
                 } else {
-                    if notice {
-                        client.send_notice(room_id, &message).await?;
-                    } else {
-                        client.send_message(room_id, &message).await?;
-                    }
+                    client.send_message(room_id, &message).await?;
                 }
             }
         }
