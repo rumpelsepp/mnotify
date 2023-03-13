@@ -19,11 +19,10 @@ mod base64;
 mod client;
 mod mime;
 mod outputs;
-mod session;
 mod terminal;
 mod util;
 
-use crate::client::Client;
+use crate::client::{session, Client};
 
 const CRATE_NAME: &str = clap::crate_name!();
 
@@ -66,9 +65,9 @@ enum Command {
         #[arg(short, long, required = true)]
         room_id: OwnedRoomId,
 
-        /// Dump state events instead
-        #[arg(short, long)]
-        state: bool,
+        /// Dump all event types
+        // #[arg(short, long)]
+        // all_types: bool,
 
         /// Only request this number of events
         #[arg(short, long, default_value = "10")]
@@ -107,6 +106,10 @@ enum Command {
         #[arg(short, long)]
         markdown: bool,
 
+        /// Send a notice message
+        #[arg(short, long)]
+        notice: bool,
+
         #[arg(short, long, required = true)]
         room_id: OwnedRoomId,
 
@@ -136,9 +139,13 @@ enum Command {
 
 impl Command {
     fn can_sync(&self) -> bool {
-        match self {
-            Command::Clean { .. } | Command::Login { .. } | Command::Sync { .. } => false,
-            _ => true,
+        if matches!(
+            self,
+            Command::Clean { .. } | Command::Login { .. } | Command::Sync { .. }
+        ) {
+            false
+        } else {
+            true
         }
     }
 }
@@ -235,11 +242,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Logout {} => {
             client.logout().await?;
         }
-        Command::Messages {
-            room_id,
-            state: _,
-            limit,
-        } => {
+        Command::Messages { room_id, limit } => {
             let msgs = client.messages(room_id, limit).await?;
             let events: Vec<Box<RawValue>> = msgs
                 .chunk
@@ -295,6 +298,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Send {
             markdown,
+            notice,
             room_id,
             attachment,
             message,
@@ -308,9 +312,17 @@ async fn main() -> anyhow::Result<()> {
                 };
 
                 if markdown {
-                    client.send_message_md(room_id, &message).await?;
+                    if notice {
+                        client.send_notice_md(room_id, &message).await?;
+                    } else {
+                        client.send_message_md(room_id, &message).await?;
+                    }
                 } else {
-                    client.send_message(room_id, &message).await?;
+                    if notice {
+                        client.send_notice(room_id, &message).await?;
+                    } else {
+                        client.send_message(room_id, &message).await?;
+                    }
                 }
             }
         }

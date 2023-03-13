@@ -5,10 +5,10 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use anyhow::bail;
-use matrix_sdk::ruma::OwnedUserId;
-use matrix_sdk::ruma::UserId;
+use matrix_sdk::ruma::{OwnedUserId, UserId};
 use matrix_sdk::Session;
 use serde::{Deserialize, Serialize};
+use tracing::error;
 
 use super::CRATE_NAME;
 
@@ -108,6 +108,40 @@ pub(crate) fn meta_path() -> io::Result<PathBuf> {
             let xdg_dirs = xdg::BaseDirectories::with_prefix(CRATE_NAME)?;
             xdg_dirs.place_state_file("meta.json")
         }
+    }
+}
+
+impl super::Client {
+    pub(crate) fn delete_session(&self) -> anyhow::Result<()> {
+        delete_session(&self.user_id)
+    }
+
+    pub(crate) fn delete_state_store(&self) -> anyhow::Result<()> {
+        fs::remove_dir_all(state_db_path(&self.user_id)?)?;
+        Ok(())
+    }
+
+    pub(crate) fn clean(&self) -> anyhow::Result<()> {
+        if let Err(e) = self.delete_session() {
+            error!("delete session: {}", e);
+        }
+        if let Err(e) = self.delete_state_store() {
+            error!("delete state store: {}", e);
+        }
+        if let Err(e) = fs::remove_file(meta_path()?) {
+            error!("delete meta.json: {}", e);
+        }
+        Ok(())
+    }
+
+    pub(super) fn persist_session(&self) -> anyhow::Result<()> {
+        let session = self.inner.session().unwrap();
+        persist_session(&self.user_id, &session)
+    }
+
+    pub(crate) async fn logout(&self) -> anyhow::Result<()> {
+        self.inner.logout().await?;
+        self.clean()
     }
 }
 
