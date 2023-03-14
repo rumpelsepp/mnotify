@@ -249,7 +249,7 @@ async fn main() -> anyhow::Result<()> {
                     eprintln!("!!        Keep this token secret at all times         !!");
                     eprintln!("!! Do not publish it and do not store it as plaintext !!");
                     eprintln!("!!!!!!!!!!!!!!!!!!!!!! WARNING !!!!!!!!!!!!!!!!!!!!!!!!!");
-                    eprintln!("");
+                    eprintln!();
                     eprintln!(
                         "Use -f/--force to display the token if you know what you are doing!"
                     );
