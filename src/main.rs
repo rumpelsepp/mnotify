@@ -13,6 +13,7 @@ use matrix_sdk::ruma::events::receipt::ReceiptThread;
 use matrix_sdk::ruma::presence::PresenceState;
 use matrix_sdk::ruma::{events::AnySyncTimelineEvent, serde::Raw};
 use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId, OwnedUserId};
+use serde::Serialize;
 use serde_json::value::RawValue;
 
 mod base64;
@@ -48,6 +49,17 @@ struct Cli {
 enum Command {
     /// Delete session store and secrets (dangerous!)
     Clean { user_id: OwnedUserId },
+    /// Get information about your homeserver and login
+    #[command(alias = "hs")]
+    Homeserver {
+        /// Really print the token
+        #[arg(short, long)]
+        force: bool,
+
+        /// Include the bearer token
+        #[arg(short = 't', long = "token")]
+        include_token: bool,
+    },
     /// Login to a homeserver and create a session store
     Login {
         user_id: OwnedUserId,
@@ -210,6 +222,41 @@ async fn main() -> anyhow::Result<()> {
     match args.command {
         Command::Clean { .. } => {
             client.clean()?;
+        }
+        Command::Homeserver {
+            force,
+            include_token,
+        } => {
+            let home_server = client.homeserver().await.to_string();
+            let user_id = client.user_id().unwrap().to_string();
+
+            #[derive(Serialize)]
+            struct HomeserverOutput {
+                home_server: String,
+                user_id: String,
+                token: Option<String>,
+            }
+
+            let mut out = HomeserverOutput {
+                home_server,
+                user_id,
+                token: None,
+            };
+
+            if include_token {
+                if !force {
+                    println!("!!!!!!!!!!!!!!!!!!!!!! WARNING !!!!!!!!!!!!!!!!!!!!!!!!!");
+                    println!("!!        Keep this token secret at all times         !!");
+                    println!("!! Do not publish it and do not store it as plaintext !!");
+                    println!("!!!!!!!!!!!!!!!!!!!!!! WARNING !!!!!!!!!!!!!!!!!!!!!!!!!");
+                    println!("");
+                    println!("Use -f/--force to display the token if you know what you are doing!");
+                    std::process::exit(1);
+                }
+                out.token = client.access_token();
+            }
+
+            println!("{}", serde_json::to_string(&out)?);
         }
         Command::Login {
             user_id,
