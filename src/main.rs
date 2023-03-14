@@ -120,7 +120,7 @@ enum Command {
         #[arg(short, long)]
         notice: bool,
 
-        /// Send a emote message
+        /// Send an emote message
         #[arg(short, long, conflicts_with = "notice")]
         emote: bool,
 
@@ -128,7 +128,7 @@ enum Command {
         room_id: OwnedRoomId,
 
         /// Send file as an attachment
-        #[arg(short, long)]
+        #[arg(short, long, conflicts_with = "message")]
         attachment: Option<PathBuf>,
 
         /// String to send; read from stdin if omitted
@@ -363,28 +363,20 @@ async fn main() -> anyhow::Result<()> {
             message,
         } => {
             if let Some(path) = attachment {
-                client.send_attachment(room_id, path).await?;
-            } else {
-                let message = match message {
-                    Some(message) => message,
-                    None => terminal::read_stdin_to_string()?,
-                };
+                return client.send_attachment(room_id, path).await;
+            }
 
-                if markdown {
-                    if notice {
-                        client.send_notice_md(room_id, &message).await?;
-                    } else if emote {
-                        client.send_emote_md(room_id, &message).await?;
-                    } else {
-                        client.send_message_md(room_id, &message).await?;
-                    }
-                } else if notice {
-                    client.send_notice(room_id, &message).await?;
-                } else if emote {
-                    client.send_emote(room_id, &message).await?;
-                } else {
-                    client.send_message(room_id, &message).await?;
-                }
+            let message = match message {
+                Some(message) => message,
+                None => terminal::read_stdin_to_string()?,
+            };
+
+            if notice {
+                client.send_notice(room_id, &message, markdown).await?;
+            } else if emote {
+                client.send_emote(room_id, &message, markdown).await?;
+            } else {
+                client.send_message(room_id, &message, markdown).await?;
             }
         }
         Command::Sync {

@@ -30,17 +30,13 @@ impl super::Client {
         &self,
         room: impl AsRef<RoomId>,
         msg: &str,
+        markdown: bool,
     ) -> anyhow::Result<()> {
-        let event = RoomMessageEventContent::text_plain(msg);
-        self.send_message_raw(room, event).await
-    }
-
-    pub(crate) async fn send_message_md(
-        &self,
-        room: impl AsRef<RoomId>,
-        msg: &str,
-    ) -> anyhow::Result<()> {
-        let event = RoomMessageEventContent::text_markdown(msg);
+        let event = if markdown {
+            RoomMessageEventContent::text_markdown(msg)
+        } else {
+            RoomMessageEventContent::text_plain(msg)
+        };
         self.send_message_raw(room, event).await
     }
 
@@ -48,27 +44,13 @@ impl super::Client {
         &self,
         room: impl AsRef<RoomId>,
         msg: &str,
+        markdown: bool,
     ) -> anyhow::Result<()> {
-        let event = RoomMessageEventContent::notice_plain(msg);
-        self.send_message_raw(room, event).await
-    }
-
-    pub(crate) async fn send_notice_md(
-        &self,
-        room: impl AsRef<RoomId>,
-        msg: &str,
-    ) -> anyhow::Result<()> {
-        let event = RoomMessageEventContent::notice_markdown(msg);
-        self.send_message_raw(room, event).await
-    }
-
-    async fn send_emote_raw(
-        &self,
-        room: impl AsRef<RoomId>,
-        content: EmoteMessageEventContent,
-    ) -> anyhow::Result<()> {
-        let msg = MessageType::Emote(content);
-        let event = RoomMessageEventContent::new(msg);
+        let event = if markdown {
+            RoomMessageEventContent::notice_markdown(msg)
+        } else {
+            RoomMessageEventContent::notice_plain(msg)
+        };
         self.send_message_raw(room, event).await
     }
 
@@ -76,18 +58,16 @@ impl super::Client {
         &self,
         room: impl AsRef<RoomId>,
         msg: &str,
+        markdown: bool,
     ) -> anyhow::Result<()> {
-        let content = EmoteMessageEventContent::plain(msg);
-        self.send_emote_raw(room, content).await
-    }
-
-    pub(crate) async fn send_emote_md(
-        &self,
-        room: impl AsRef<RoomId>,
-        msg: &str,
-    ) -> anyhow::Result<()> {
-        let content = EmoteMessageEventContent::markdown(msg);
-        self.send_emote_raw(room, content).await
+        let content = if markdown {
+            EmoteMessageEventContent::markdown(msg)
+        } else {
+            EmoteMessageEventContent::plain(msg)
+        };
+        let msg = MessageType::Emote(content);
+        let event = RoomMessageEventContent::new(msg);
+        self.send_message_raw(room, event).await
     }
 
     pub(crate) async fn send_attachment(
