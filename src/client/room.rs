@@ -7,21 +7,26 @@ use matrix_sdk::room::{self, Messages, MessagesOptions, Room};
 use matrix_sdk::ruma::events::room::message::{
     EmoteMessageEventContent, MessageType, RoomMessageEventContent,
 };
+use matrix_sdk::ruma::events::room::message::{ForwardThread, RoomMessageEvent};
+use matrix_sdk::ruma::OwnedEventId;
 use matrix_sdk::ruma::RoomId;
 
 impl super::Client {
-    pub(crate) fn get_joined_room(&self, room: impl AsRef<RoomId>) -> anyhow::Result<room::Joined> {
+    pub(crate) fn get_joined_room(
+        &self,
+        room_id: impl AsRef<RoomId>,
+    ) -> anyhow::Result<room::Joined> {
         self.inner
-            .get_joined_room(room.as_ref())
-            .ok_or_else(|| anyhow!("no such room: {}", room.as_ref()))
+            .get_joined_room(room_id.as_ref())
+            .ok_or_else(|| anyhow!("no such room: {}", room_id.as_ref()))
     }
 
     pub(crate) async fn send_message_raw(
         &self,
-        room: impl AsRef<RoomId>,
+        room_id: impl AsRef<RoomId>,
         content: RoomMessageEventContent,
     ) -> anyhow::Result<()> {
-        let room = self.get_joined_room(room)?;
+        let room = self.get_joined_room(room_id)?;
         room.send(content, None).await?;
         Ok(())
     }
@@ -29,50 +34,72 @@ impl super::Client {
     pub(crate) async fn send_message(
         &self,
         room: impl AsRef<RoomId>,
-        msg: &str,
+        body: &str,
         markdown: bool,
     ) -> anyhow::Result<()> {
-        let event = if markdown {
-            RoomMessageEventContent::text_markdown(msg)
+        let content = if markdown {
+            RoomMessageEventContent::text_markdown(body)
         } else {
-            RoomMessageEventContent::text_plain(msg)
+            RoomMessageEventContent::text_plain(body)
         };
-        self.send_message_raw(room, event).await
+        self.send_message_raw(room, content).await
+    }
+
+    pub(crate) async fn send_message_reply(
+        &self,
+        room_id: impl AsRef<RoomId>,
+        event_id: &OwnedEventId,
+        body: &str,
+        markdown: bool,
+    ) -> anyhow::Result<()> {
+        let room = self.get_joined_room(&room_id)?;
+        let timeline_event = room.event(event_id).await?;
+        let event_content = timeline_event.event.deserialize_as::<RoomMessageEvent>()?;
+        let original_message = event_content.as_original().unwrap();
+
+        let content = if markdown {
+            RoomMessageEventContent::text_markdown(body)
+        } else {
+            RoomMessageEventContent::text_plain(body)
+        }
+        .make_reply_to(original_message, ForwardThread::Yes);
+
+        self.send_message_raw(room_id, content).await
     }
 
     pub(crate) async fn send_notice(
         &self,
-        room: impl AsRef<RoomId>,
-        msg: &str,
+        room_id: impl AsRef<RoomId>,
+        body: &str,
         markdown: bool,
     ) -> anyhow::Result<()> {
         let event = if markdown {
-            RoomMessageEventContent::notice_markdown(msg)
+            RoomMessageEventContent::notice_markdown(body)
         } else {
-            RoomMessageEventContent::notice_plain(msg)
+            RoomMessageEventContent::notice_plain(body)
         };
-        self.send_message_raw(room, event).await
+        self.send_message_raw(room_id, event).await
     }
 
     pub(crate) async fn send_emote(
         &self,
-        room: impl AsRef<RoomId>,
-        msg: &str,
+        room_id: impl AsRef<RoomId>,
+        body: &str,
         markdown: bool,
     ) -> anyhow::Result<()> {
         let content = if markdown {
-            EmoteMessageEventContent::markdown(msg)
+            EmoteMessageEventContent::markdown(body)
         } else {
-            EmoteMessageEventContent::plain(msg)
+            EmoteMessageEventContent::plain(body)
         };
-        let msg = MessageType::Emote(content);
-        let event = RoomMessageEventContent::new(msg);
-        self.send_message_raw(room, event).await
+        let msgtype = MessageType::Emote(content);
+        let content = RoomMessageEventContent::new(msgtype);
+        self.send_message_raw(room_id, content).await
     }
 
     pub(crate) async fn send_attachment(
         &self,
-        room: impl AsRef<RoomId>,
+        room_id: impl AsRef<RoomId>,
         path: impl AsRef<Path>,
     ) -> anyhow::Result<()> {
         let path = path.as_ref();
@@ -83,12 +110,12 @@ impl super::Client {
             bail!("invalid file extension: {:?}", path);
         };
 
-        let room = self.get_joined_room(room)?;
+        let room = self.get_joined_room(room_id)?;
         let data = fs::read(path)?;
         let config = AttachmentConfig::default().generate_thumbnail(None);
-        let mime_type = crate::mime::guess_mime(extension);
+        let content_type = crate::mime::guess_mime(extension);
 
-        room.send_attachment(file_name, &mime_type, data, config)
+        room.send_attachment(file_name, &content_type, data, config)
             .await?;
         Ok(())
     }
@@ -148,10 +175,10 @@ impl super::Client {
 
     pub(crate) async fn messages(
         &self,
-        room: impl AsRef<RoomId>,
+        room_id: impl AsRef<RoomId>,
         limit: u64,
     ) -> anyhow::Result<Messages> {
-        let room = self.get_joined_room(room)?;
+        let room = self.get_joined_room(room_id)?;
         let mut options = MessagesOptions::backward();
         options.limit = limit.try_into()?;
         room.messages(options).await.map_err(|e| anyhow!(e))
