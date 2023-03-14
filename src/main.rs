@@ -245,12 +245,14 @@ async fn main() -> anyhow::Result<()> {
 
             if include_token {
                 if !force {
-                    println!("!!!!!!!!!!!!!!!!!!!!!! WARNING !!!!!!!!!!!!!!!!!!!!!!!!!");
-                    println!("!!        Keep this token secret at all times         !!");
-                    println!("!! Do not publish it and do not store it as plaintext !!");
-                    println!("!!!!!!!!!!!!!!!!!!!!!! WARNING !!!!!!!!!!!!!!!!!!!!!!!!!");
-                    println!("");
-                    println!("Use -f/--force to display the token if you know what you are doing!");
+                    eprintln!("!!!!!!!!!!!!!!!!!!!!!! WARNING !!!!!!!!!!!!!!!!!!!!!!!!!");
+                    eprintln!("!!        Keep this token secret at all times         !!");
+                    eprintln!("!! Do not publish it and do not store it as plaintext !!");
+                    eprintln!("!!!!!!!!!!!!!!!!!!!!!! WARNING !!!!!!!!!!!!!!!!!!!!!!!!!");
+                    eprintln!("");
+                    eprintln!(
+                        "Use -f/--force to display the token if you know what you are doing!"
+                    );
                     std::process::exit(1);
                 }
                 out.token = client.access_token();
