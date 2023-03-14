@@ -10,7 +10,7 @@ use matrix_sdk::ruma::events::room::message::{
 use matrix_sdk::ruma::{EventId, RoomId};
 
 impl super::Client {
-    fn get_joined_room(&self, room: impl AsRef<RoomId>) -> anyhow::Result<room::Joined> {
+    pub(crate) fn get_joined_room(&self, room: impl AsRef<RoomId>) -> anyhow::Result<room::Joined> {
         self.inner
             .get_joined_room(room.as_ref())
             .ok_or_else(|| anyhow!("no such room: {}", room.as_ref()))
@@ -121,16 +121,6 @@ impl super::Client {
 
         room.send_attachment(file_name, &mime_type, data, config)
             .await?;
-        Ok(())
-    }
-
-    pub(crate) async fn send_typing(
-        &self,
-        room: impl AsRef<RoomId>,
-        enabled: bool,
-    ) -> anyhow::Result<()> {
-        let room = self.get_joined_room(room)?;
-        room.typing_notice(enabled).await?;
         Ok(())
     }
 

@@ -413,7 +413,8 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         Command::Typing { room_id, disable } => {
-            client.send_typing(room_id, !disable).await?;
+            let room = client.get_joined_room(room_id)?;
+            room.typing_notice(!disable).await?;
         }
         Command::Whoami => {
             let resp = client.whoami().await?;
