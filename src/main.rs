@@ -96,8 +96,6 @@ enum Command {
         #[arg(long)]
         reason: Option<String>,
     },
-    /// React to emojic verification requests
-    Verify {},
     /// Query room information
     Rooms {
         /// Only query this room
@@ -111,15 +109,6 @@ enum Command {
         /// Query avatars
         #[arg(long = "avatars")]
         query_avatars: bool,
-    },
-    /// Send typing notifications
-    Typing {
-        #[arg(long, required = true)]
-        room_id: OwnedRoomId,
-
-        /// Disable typing
-        #[arg(long)]
-        disable: bool,
     },
     /// Send a message to a room
     Send {
@@ -158,6 +147,17 @@ enum Command {
         #[arg(long)]
         raw: bool,
     },
+    /// Send typing notifications
+    Typing {
+        #[arg(long, required = true)]
+        room_id: OwnedRoomId,
+
+        /// Disable typing
+        #[arg(long)]
+        disable: bool,
+    },
+    /// React to emojic verification requests
+    Verify {},
     /// Ask the homeserver who we are
     Whoami,
 }
