@@ -112,6 +112,15 @@ enum Command {
         #[arg(long = "avatars")]
         query_avatars: bool,
     },
+    /// Send typing notifications
+    Typing {
+        #[arg(long, required = true)]
+        room_id: OwnedRoomId,
+
+        /// Disable typing
+        #[arg(long)]
+        disable: bool,
+    },
     /// Send a message to a room
     Send {
         /// Enable markdown formatting
@@ -402,6 +411,9 @@ async fn main() -> anyhow::Result<()> {
 
                 client.sync(sync_settings.clone()).await?;
             }
+        }
+        Command::Typing { room_id, disable } => {
+            client.send_typing(room_id, !disable).await?;
         }
         Command::Whoami => {
             let resp = client.whoami().await?;

@@ -124,6 +124,16 @@ impl super::Client {
         Ok(())
     }
 
+    pub(crate) async fn send_typing(
+        &self,
+        room: impl AsRef<RoomId>,
+        enabled: bool,
+    ) -> anyhow::Result<()> {
+        let room = self.get_joined_room(room)?;
+        room.typing_notice(enabled).await?;
+        Ok(())
+    }
+
     pub(crate) async fn query_room(
         &self,
         room: Room,
