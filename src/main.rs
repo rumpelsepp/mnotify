@@ -346,8 +346,8 @@ async fn main() -> anyhow::Result<()> {
             event_id,
             reason,
         } => {
-            client
-                .redact(&room_id, &event_id, reason.as_ref().map(String::as_ref))
+            let room = client.get_joined_room(room_id)?;
+            room.redact(&event_id, reason.as_ref().map(String::as_ref), None)
                 .await?;
         }
         Command::Verify {} => {

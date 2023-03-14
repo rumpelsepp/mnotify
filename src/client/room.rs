@@ -7,24 +7,13 @@ use matrix_sdk::room::{self, Messages, MessagesOptions, Room};
 use matrix_sdk::ruma::events::room::message::{
     EmoteMessageEventContent, MessageType, RoomMessageEventContent,
 };
-use matrix_sdk::ruma::{EventId, RoomId};
+use matrix_sdk::ruma::RoomId;
 
 impl super::Client {
     pub(crate) fn get_joined_room(&self, room: impl AsRef<RoomId>) -> anyhow::Result<room::Joined> {
         self.inner
             .get_joined_room(room.as_ref())
             .ok_or_else(|| anyhow!("no such room: {}", room.as_ref()))
-    }
-
-    pub(crate) async fn redact(
-        &self,
-        room: impl AsRef<RoomId>,
-        event_id: &EventId,
-        reason: Option<&str>,
-    ) -> anyhow::Result<()> {
-        let room = self.get_joined_room(room)?;
-        room.redact(event_id, reason, None).await?;
-        Ok(())
     }
 
     pub(crate) async fn send_message_raw(
