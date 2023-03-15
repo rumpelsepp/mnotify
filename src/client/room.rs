@@ -145,6 +145,7 @@ impl super::Client {
             history_visibility: room.history_visibility().to_string(),
             guest_access: room.guest_access().to_string(),
             avatar: room_avatar,
+            matrix_uri: room.matrix_permalink(false).await?.to_string(),
             matrix_to_uri: room.matrix_to_permalink().await?.to_string(),
             unread_notifications: room.unread_notification_counts(),
             members: None,
