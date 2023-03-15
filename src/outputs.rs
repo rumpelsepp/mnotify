@@ -30,6 +30,7 @@ pub(crate) struct Room {
     pub(crate) history_visibility: String,
     #[serde(with = "crate::base64")]
     pub(crate) avatar: Option<Vec<u8>>,
+    pub(crate) matrix_uri: String,
     pub(crate) matrix_to_uri: String,
     pub(crate) unread_notifications: UnreadNotificationsCount,
     pub(crate) members: Option<Vec<RoomMember>>,
