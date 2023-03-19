@@ -106,14 +106,11 @@ impl super::Client {
         let Some(file_name) = path.file_name().map(|s|s.to_str().unwrap()) else {
             bail!("invalid file: {:?}", path);
         };
-        let Some(extension) = path.extension().map(|s|s.to_str().unwrap()) else {
-            bail!("invalid file extension: {:?}", path);
-        };
 
         let room = self.get_joined_room(room_id)?;
         let data = fs::read(path)?;
         let config = AttachmentConfig::default().generate_thumbnail(None);
-        let content_type = crate::mime::guess_mime(extension);
+        let content_type = crate::mime::guess_mime(path)?;
 
         room.send_attachment(file_name, &content_type, data, config)
             .await?;
