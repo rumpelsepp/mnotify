@@ -1,6 +1,6 @@
 pub(crate) fn guess_mime(extension: &str) -> mime::Mime {
     match extension.to_lowercase().as_str() {
-        "jpg" => mime::IMAGE_JPEG,
+        "jpg" | "jpeg" => mime::IMAGE_JPEG,
         "gif" => mime::IMAGE_GIF,
         "png" => mime::IMAGE_PNG,
         "pdf" => mime::APPLICATION_PDF,
