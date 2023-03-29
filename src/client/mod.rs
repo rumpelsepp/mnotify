@@ -38,6 +38,7 @@ impl Client {
             self.inner.restore_session(session).await?;
         }
 
+        // TODO: Is this actually an error?
         Ok(())
     }
 
