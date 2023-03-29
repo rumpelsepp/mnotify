@@ -1,5 +1,6 @@
 use std::env;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::bail;
 use clap::{Parser, Subcommand};
@@ -18,16 +19,18 @@ use serde_json::value::RawValue;
 
 mod base64;
 mod client;
+mod dbus;
 mod mime;
 mod outputs;
 mod terminal;
 mod util;
 
 use crate::client::{session, Client};
+use crate::dbus::DBusClientProxy;
 
 const CRATE_NAME: &str = clap::crate_name!();
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
     #[command(flatten)]
@@ -45,7 +48,7 @@ struct Cli {
     command: Command,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Clone, Debug, Subcommand)]
 enum Command {
     /// Delete session store and secrets (dangerous!)
     Clean { user_id: OwnedUserId },
@@ -135,6 +138,10 @@ enum Command {
         #[arg(long, conflicts_with_all = ["notice", "emote", "attachment"])]
         reply_to: Option<OwnedEventId>,
 
+        /// Send message via another mnotify instance via ipc
+        #[arg(short, long)]
+        ipc: bool,
+
         /// String to send; read from stdin if omitted
         message: Option<String>,
     },
@@ -197,8 +204,8 @@ async fn on_room_message(
     Ok(())
 }
 
-async fn create_client(cmd: &Command) -> anyhow::Result<Client> {
-    match cmd {
+async fn create_client(cmd: &Command, sync_settings: SyncSettings) -> anyhow::Result<Arc<Client>> {
+    let client = match cmd {
         Command::Login {
             ref user_id,
             ref device_name,
@@ -212,7 +219,13 @@ async fn create_client(cmd: &Command) -> anyhow::Result<Client> {
         }
         Command::Clean { user_id } => Client::builder().user_id(user_id.to_owned()).build().await,
         _ => Client::builder().load_meta()?.build().await?.ensure_login(),
+    }?;
+
+    if cmd.can_sync() {
+        client.sync_once(sync_settings).await?;
     }
+
+    Ok(Arc::new(client))
 }
 
 #[tokio::main]
@@ -226,20 +239,18 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(util::convert_filter(args.verbose.log_level_filter()))
         .init();
 
-    let client = create_client(&args.command).await?;
-
-    if args.command.can_sync() {
-        client.sync_once(sync_settings.clone()).await?;
-    }
+    let cmd = args.command.clone();
 
     match args.command {
         Command::Clean { .. } => {
+            let client = create_client(&cmd, sync_settings.clone()).await?;
             client.clean()?;
         }
         Command::Homeserver {
             force,
             include_token,
         } => {
+            let client = create_client(&cmd, sync_settings.clone()).await?;
             let home_server = client.homeserver().await.to_string();
             let user_id = client.user_id().unwrap().to_string();
 
@@ -278,6 +289,8 @@ async fn main() -> anyhow::Result<()> {
             device_name,
             password,
         } => {
+            let client = create_client(&cmd, sync_settings.clone()).await?;
+
             if client.logged_in() {
                 bail!("already logged in");
             }
@@ -302,9 +315,11 @@ async fn main() -> anyhow::Result<()> {
             .dump()?;
         }
         Command::Logout {} => {
+            let client = create_client(&cmd, sync_settings.clone()).await?;
             client.logout().await?;
         }
         Command::Messages { room_id, limit } => {
+            let client = create_client(&cmd, sync_settings.clone()).await?;
             let msgs = client.messages(room_id, limit).await?;
             let events: Vec<Box<RawValue>> = msgs
                 .chunk
@@ -320,6 +335,7 @@ async fn main() -> anyhow::Result<()> {
             query_members,
             query_avatars,
         } => {
+            let client = create_client(&cmd, sync_settings.clone()).await?;
             let out = match room_id {
                 Some(room_id) => {
                     let Some(room) = client.get_room(&room_id) else {
@@ -350,11 +366,13 @@ async fn main() -> anyhow::Result<()> {
             event_id,
             reason,
         } => {
+            let client = create_client(&cmd, sync_settings.clone()).await?;
             let room = client.get_joined_room(room_id)?;
             room.redact(&event_id, reason.as_ref().map(String::as_ref), None)
                 .await?;
         }
         Command::Verify {} => {
+            let client = create_client(&cmd, sync_settings.clone()).await?;
             client.set_sas_handlers().await?;
             client.sync(sync_settings.clone()).await?;
         }
@@ -365,8 +383,21 @@ async fn main() -> anyhow::Result<()> {
             notice,
             emote,
             attachment,
+            ipc,
             message,
         } => {
+            if ipc {
+                let connection = zbus::Connection::session().await?;
+                let ipc_client = DBusClientProxy::new(&connection).await?;
+                let body = match message {
+                    Some(message) => message,
+                    None => terminal::read_stdin_to_string()?,
+                };
+                ipc_client.send(room_id.as_str(), &body, markdown).await?;
+                return Ok(());
+            }
+
+            let client = create_client(&cmd, sync_settings.clone()).await?;
             if let Some(path) = attachment {
                 return client.send_attachment(room_id, path).await;
             }
@@ -395,6 +426,7 @@ async fn main() -> anyhow::Result<()> {
             receipt,
             raw,
         } => {
+            let client = create_client(&cmd, sync_settings.clone()).await?;
             if raw {
                 let mut sync_stream = Box::pin(client.sync_stream(sync_settings.clone()).await);
                 while let Some(Ok(response)) = sync_stream.next().await {
@@ -412,14 +444,20 @@ async fn main() -> anyhow::Result<()> {
                     });
                 }
 
-                client.sync(sync_settings.clone()).await?;
+                {
+                    let dbus_server = crate::dbus::connect(client.clone()).await?;
+                    tracing::debug!("created dbus server: {:?}", dbus_server);
+                    client.sync(sync_settings.clone()).await?;
+                }
             }
         }
         Command::Typing { room_id, disable } => {
+            let client = create_client(&cmd, sync_settings.clone()).await?;
             let room = client.get_joined_room(room_id)?;
             room.typing_notice(!disable).await?;
         }
         Command::Whoami => {
+            let client = create_client(&cmd, sync_settings.clone()).await?;
             let resp = client.whoami().await?;
             println!("{}", serde_json::to_string(&resp)?);
         }

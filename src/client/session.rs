@@ -3,14 +3,34 @@ use std::fs;
 use std::io;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::thread;
 
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use matrix_sdk::ruma::{OwnedUserId, UserId};
 use matrix_sdk::Session;
 use serde::{Deserialize, Serialize};
 use tracing::error;
 
 use super::CRATE_NAME;
+
+// The keyring crate uses zbus internally, which prevents it from being used in
+// the main context of mnotify (it panics, because a second runtime is created).
+// This problem is solved by moving the calls to the keyring crate into an own
+// thread.
+
+// TODO: Find out how to wrap a function call properly in rust. :)
+
+macro_rules! error_in_thread {
+    ($e:expr, $res:ident) => {
+        match $e {
+            Ok(e) => e,
+            Err(e) => {
+                $res = Err(anyhow!("{}", e));
+                return;
+            }
+        }
+    };
+}
 
 pub(crate) fn session_json_path(user_id: impl AsRef<UserId>) -> anyhow::Result<PathBuf> {
     let user_id = user_id.as_ref();
@@ -33,9 +53,21 @@ fn load_session_json(path: impl AsRef<Path>) -> anyhow::Result<Option<Session>> 
 }
 
 fn load_session_keyring(user_id: impl AsRef<UserId>) -> anyhow::Result<Option<Session>> {
-    let entry = keyring::Entry::new(CRATE_NAME, user_id.as_ref().as_str())?;
-    // TODO: Handle None case.
-    let raw = entry.get_password()?;
+    let mut raw: String = "".into();
+    let mut res = Ok(());
+    let user_id = user_id.as_ref().to_string();
+
+    thread::scope(|s| {
+        let t = s.spawn(|| {
+            let entry = error_in_thread!(keyring::Entry::new(CRATE_NAME, user_id.as_str()), res);
+
+            // TODO: Handle None case.
+            raw = error_in_thread!(entry.get_password(), res);
+        });
+
+        t.join().unwrap();
+    });
+
     Ok(Some(serde_json::from_str(&raw)?))
 }
 
@@ -66,9 +98,21 @@ fn persist_session_json(path: impl AsRef<Path>, session: &Session) -> anyhow::Re
 }
 
 fn persist_session_keyring(user_id: impl AsRef<UserId>, session: &Session) -> anyhow::Result<()> {
-    let entry = keyring::Entry::new(CRATE_NAME, user_id.as_ref().as_str())?;
-    entry.set_password(&serde_json::to_string(session)?)?;
-    Ok(())
+    let mut res = Ok(());
+    let user_id = user_id.as_ref().to_string();
+
+    thread::scope(|s| {
+        let t = s.spawn(|| {
+            let entry = error_in_thread!(keyring::Entry::new(CRATE_NAME, user_id.as_str()), res);
+
+            let data = error_in_thread!(serde_json::to_string(session), res);
+            error_in_thread!(entry.set_password(&data), res);
+        });
+
+        t.join().unwrap();
+    });
+
+    res
 }
 
 pub(crate) fn persist_session(
