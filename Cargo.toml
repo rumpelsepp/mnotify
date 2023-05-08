@@ -35,7 +35,7 @@ default-features = false
 features = ["e2e-encryption", "sled", "markdown", "socks", "anyhow", "image-proc"]
  
 [dev-dependencies]
-assert_cmd = "2.0.8"
+assert_cmd = "2.0.11"
 predicates = "3.0.2"
 
 [[bin]]
