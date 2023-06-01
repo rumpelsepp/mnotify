@@ -10,7 +10,7 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = { version = "1.0.69", features = ["backtrace"] }
+anyhow = { version = "1.0.71", features = ["backtrace"] }
 base64 = "0.21.0"
 clap = { version = "4.2.7", features = ["derive", "cargo"] }
 clap-verbosity-flag = "2.0.1"
