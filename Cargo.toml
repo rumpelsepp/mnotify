@@ -16,7 +16,7 @@ clap = { version = "4.2.7", features = ["derive", "cargo"] }
 clap-verbosity-flag = "2.0.1"
 futures = "0.3.26"
 is-terminal = "0.4.4"
-keyring = "2.0.1"
+keyring = "2.0.4"
 log = "0.4.17"
 mime = "0.3.17"
 prompts = "0.1.0"
