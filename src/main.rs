@@ -13,10 +13,10 @@ use matrix_sdk::ruma::events::receipt::ReceiptThread;
 use matrix_sdk::ruma::presence::PresenceState;
 use matrix_sdk::ruma::{events::AnySyncTimelineEvent, serde::Raw};
 use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId, OwnedUserId};
+use matrix_sdk::RoomState;
 use serde::Serialize;
 use serde_json::value::RawValue;
 
-mod base64;
 mod client;
 mod mime;
 mod outputs;
@@ -101,14 +101,6 @@ enum Command {
         /// Only query this room
         #[arg(long)]
         room_id: Option<OwnedRoomId>,
-
-        /// Query room members
-        #[arg(long = "members")]
-        query_members: bool,
-
-        /// Query avatars
-        #[arg(long = "avatars")]
-        query_avatars: bool,
     },
     /// Send a message to a room
     Send {
@@ -180,7 +172,10 @@ async fn on_room_message(
     room: Room,
     receipt: bool,
 ) -> anyhow::Result<()> {
-    let Room::Joined(room) = room else {return Ok(())};
+    match room.state() {
+        RoomState::Joined => {},
+        _ => return Ok(())
+    }
 
     let raw_json = event.clone().into_json();
     let parsed_event: SyncTimelineEvent = event.into();
@@ -240,7 +235,7 @@ async fn main() -> anyhow::Result<()> {
             force,
             include_token,
         } => {
-            let home_server = client.homeserver().await.to_string();
+            let home_server = client.homeserver().to_string();
             let user_id = client.user_id().unwrap().to_string();
 
             #[derive(Serialize)]
@@ -315,18 +310,14 @@ async fn main() -> anyhow::Result<()> {
 
             println!("{}", serde_json::to_string(&events)?);
         }
-        Command::Rooms {
-            room_id,
-            query_members,
-            query_avatars,
-        } => {
+        Command::Rooms { room_id} => {
             let out = match room_id {
                 Some(room_id) => {
                     let Some(room) = client.get_room(&room_id) else {
                         bail!("no such room: {}", room_id);
                     };
                     let output = client
-                        .query_room(room, query_avatars, query_members)
+                        .query_room(room)
                         .await?;
                     serde_json::to_string(&output)?
                 }
@@ -335,7 +326,7 @@ async fn main() -> anyhow::Result<()> {
                     for room in client.rooms() {
                         output.push(
                             client
-                                .query_room(room, query_avatars, query_members)
+                                .query_room(room)
                                 .await?,
                         );
                     }

@@ -4,6 +4,7 @@ use anyhow::anyhow;
 use matrix_sdk::ruma::OwnedUserId;
 use matrix_sdk::Client as MatrixClient;
 
+use super::session::state_db_path;
 use super::{session, Client};
 use crate::CRATE_NAME;
 
@@ -37,9 +38,11 @@ impl ClientBuilder {
             panic!("no device name set");
         };
 
+        let state_path = state_db_path(user_id.clone())?;
+
         let mut builder = MatrixClient::builder()
             .server_name(user_id.server_name())
-            .sled_store(session::state_db_path(&user_id)?, None);
+            .sqlite_store(state_path, None);
 
         if let Ok(proxy) = env::var("HTTPS_PROXY") {
             builder = builder.proxy(proxy);

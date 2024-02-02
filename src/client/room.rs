@@ -5,19 +5,20 @@ use anyhow::{anyhow, bail};
 use matrix_sdk::attachment::AttachmentConfig;
 use matrix_sdk::room::{self, Messages, MessagesOptions, Room};
 use matrix_sdk::ruma::events::room::message::{
-    EmoteMessageEventContent, MessageType, RoomMessageEventContent,
+    AddMentions, EmoteMessageEventContent, MessageType, RoomMessageEventContent,
 };
 use matrix_sdk::ruma::events::room::message::{ForwardThread, RoomMessageEvent};
-use matrix_sdk::ruma::OwnedEventId;
 use matrix_sdk::ruma::RoomId;
+use matrix_sdk::ruma::{OwnedEventId, OwnedMxcUri};
+use matrix_sdk::RoomMemberships;
 
 impl super::Client {
     pub(crate) fn get_joined_room(
         &self,
         room_id: impl AsRef<RoomId>,
-    ) -> anyhow::Result<room::Joined> {
+    ) -> anyhow::Result<room::Room> {
         self.inner
-            .get_joined_room(room_id.as_ref())
+            .get_room(room_id.as_ref())
             .ok_or_else(|| anyhow!("no such room: {}", room_id.as_ref()))
     }
 
@@ -27,7 +28,7 @@ impl super::Client {
         content: RoomMessageEventContent,
     ) -> anyhow::Result<()> {
         let room = self.get_joined_room(room_id)?;
-        room.send(content, None).await?;
+        room.send(content).await?;
         Ok(())
     }
 
@@ -62,7 +63,7 @@ impl super::Client {
         } else {
             RoomMessageEventContent::text_plain(body)
         }
-        .make_reply_to(original_message, ForwardThread::Yes);
+        .make_reply_to(original_message, ForwardThread::Yes, AddMentions::No);
 
         self.send_message_raw(room_id, content).await
     }
@@ -103,7 +104,7 @@ impl super::Client {
         path: impl AsRef<Path>,
     ) -> anyhow::Result<()> {
         let path = path.as_ref();
-        let Some(file_name) = path.file_name().map(|s|s.to_str().unwrap()) else {
+        let Some(file_name) = path.file_name().map(|s| s.to_str().unwrap()) else {
             bail!("invalid file: {:?}", path);
         };
 
@@ -117,56 +118,57 @@ impl super::Client {
         Ok(())
     }
 
-    pub(crate) async fn query_room(
-        &self,
-        room: Room,
-        query_avatars: bool,
-        query_members: bool,
-    ) -> anyhow::Result<crate::outputs::Room> {
-        let room_avatar = if query_avatars {
-            room.avatar(matrix_sdk::media::MediaFormat::File).await?
-        } else {
-            None
-        };
+    pub(crate) fn mxc_to_http(&self, mxc: OwnedMxcUri) -> String {
+        if !mxc.is_valid() {
+            return String::from("");
+        }
+        format!(
+            "{}_matrix/media/v3/thumbnail/{}/{}?width=50&height=50&method=scale",
+            self.inner.homeserver().as_str(),
+            mxc.server_name().unwrap(),
+            mxc.media_id().unwrap(),
+        )
+    }
 
-        let mut room_out = crate::outputs::Room {
+    pub(crate) async fn query_room(&self, room: Room) -> anyhow::Result<crate::outputs::Room> {
+        let mut members_out = Vec::new();
+        for member in room.members(RoomMemberships::empty()).await? {
+            let avatar = match member.avatar_url() {
+                Some(uri) => self.mxc_to_http(OwnedMxcUri::from(uri)),
+                None => String::from(""),
+            };
+            members_out.push(crate::outputs::RoomMember {
+                avatar,
+                name: member.name().to_string(),
+                display_name: member.display_name().map(|s| s.to_string()),
+                user_id: member.user_id().to_string(),
+            })
+        }
+
+        let mut opts = MessagesOptions::backward();
+        opts.limit = (1).try_into().unwrap();
+
+        let room_out = crate::outputs::Room {
             name: room.name(),
             topic: room.topic(),
             display_name: room.display_name().await?.to_string(),
             room_id: room.room_id().to_string(),
             is_encrypted: room.is_encrypted().await?,
-            is_direct: room.is_direct(),
+            is_direct: room.is_direct().await?,
             is_tombstoned: room.is_tombstoned(),
             is_public: room.is_public(),
             is_space: room.is_space(),
             history_visibility: room.history_visibility().to_string(),
             guest_access: room.guest_access().to_string(),
-            avatar: room_avatar,
+            avatar: match room.avatar_url() {
+                Some(url) => self.mxc_to_http(url.clone()),
+                None => String::from(""),
+            },
             matrix_uri: room.matrix_permalink(false).await?.to_string(),
             matrix_to_uri: room.matrix_to_permalink().await?.to_string(),
             unread_notifications: room.unread_notification_counts(),
-            members: None,
+            members: Some(members_out),
         };
-
-        if query_members {
-            let mut members_out = vec![];
-            for member in room.members().await? {
-                let member_avatar = if query_avatars {
-                    member.avatar(matrix_sdk::media::MediaFormat::File).await?
-                } else {
-                    None
-                };
-
-                members_out.push(crate::outputs::RoomMember {
-                    avatar: member_avatar,
-                    name: member.name().to_string(),
-                    display_name: member.display_name().map(|s| s.to_string()),
-                    user_id: member.user_id().to_string(),
-                })
-            }
-
-            room_out.members = Some(members_out);
-        }
 
         Ok(room_out)
     }

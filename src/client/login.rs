@@ -10,6 +10,7 @@ impl super::Client {
 
     pub(crate) async fn login_password(&self, password: &str) -> anyhow::Result<()> {
         self.inner
+            .matrix_auth()
             .login_username(&self.user_id, password)
             .initial_device_display_name(&self.device_name)
             .send()

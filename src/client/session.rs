@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::bail;
 use matrix_sdk::ruma::{OwnedUserId, UserId};
-use matrix_sdk::Session;
+use matrix_sdk::matrix_auth::MatrixSession;
 use serde::{Deserialize, Serialize};
 use tracing::error;
 
@@ -26,20 +26,20 @@ pub(crate) fn state_db_path(user_id: impl AsRef<UserId>) -> anyhow::Result<PathB
     Ok(xdg_dirs.place_state_file(Path::new(&user_id.to_string()).join("state.sled"))?)
 }
 
-fn load_session_json(path: impl AsRef<Path>) -> anyhow::Result<Option<Session>> {
+fn load_session_json(path: impl AsRef<Path>) -> anyhow::Result<Option<MatrixSession>> {
     let raw = fs::read_to_string(path)?;
     // TODO: Handle None case.
     Ok(Some(serde_json::from_str(&raw)?))
 }
 
-fn load_session_keyring(user_id: impl AsRef<UserId>) -> anyhow::Result<Option<Session>> {
+fn load_session_keyring(user_id: impl AsRef<UserId>) -> anyhow::Result<Option<MatrixSession>> {
     let entry = keyring::Entry::new(CRATE_NAME, user_id.as_ref().as_str())?;
     // TODO: Handle None case.
     let raw = entry.get_password()?;
     Ok(Some(serde_json::from_str(&raw)?))
 }
 
-pub(crate) fn load_session(user_id: impl AsRef<UserId>) -> anyhow::Result<Option<Session>> {
+pub(crate) fn load_session(user_id: impl AsRef<UserId>) -> anyhow::Result<Option<MatrixSession>> {
     if env::var("MN_NO_KEYRING").is_ok() {
         load_session_json(session_json_path(user_id)?)
     } else {
@@ -47,7 +47,7 @@ pub(crate) fn load_session(user_id: impl AsRef<UserId>) -> anyhow::Result<Option
     }
 }
 
-fn persist_session_json(path: impl AsRef<Path>, session: &Session) -> anyhow::Result<()> {
+fn persist_session_json(path: impl AsRef<Path>, session: &MatrixSession) -> anyhow::Result<()> {
     let mut out = serde_json::to_string(session)?;
     if !out.ends_with('\n') {
         out.push('\n');
@@ -65,7 +65,7 @@ fn persist_session_json(path: impl AsRef<Path>, session: &Session) -> anyhow::Re
     Ok(())
 }
 
-fn persist_session_keyring(user_id: impl AsRef<UserId>, session: &Session) -> anyhow::Result<()> {
+fn persist_session_keyring(user_id: impl AsRef<UserId>, session: &MatrixSession) -> anyhow::Result<()> {
     let entry = keyring::Entry::new(CRATE_NAME, user_id.as_ref().as_str())?;
     entry.set_password(&serde_json::to_string(session)?)?;
     Ok(())
@@ -73,7 +73,7 @@ fn persist_session_keyring(user_id: impl AsRef<UserId>, session: &Session) -> an
 
 pub(crate) fn persist_session(
     user_id: impl AsRef<UserId>,
-    session: &Session,
+    session: &MatrixSession,
 ) -> anyhow::Result<()> {
     if env::var("MN_NO_KEYRING").is_ok() {
         persist_session_json(session_json_path(user_id)?, session)
@@ -135,12 +135,12 @@ impl super::Client {
     }
 
     pub(super) fn persist_session(&self) -> anyhow::Result<()> {
-        let session = self.inner.session().unwrap();
+        let session = self.inner.matrix_auth().session().unwrap();
         persist_session(&self.user_id, &session)
     }
 
     pub(crate) async fn logout(&self) -> anyhow::Result<()> {
-        self.inner.logout().await?;
+        self.inner.matrix_auth().logout().await?;
         self.clean()
     }
 }
