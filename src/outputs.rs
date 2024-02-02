@@ -14,7 +14,7 @@ use matrix_sdk::{
         OwnedRoomId,
     },
 };
-use serde_json::value::RawValue;
+// use serde_json::value::RawValue;
 
 #[derive(Serialize)]
 pub(crate) struct SSRoom {
