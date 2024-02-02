@@ -1,14 +1,14 @@
-use std::io::{self, Read};
+use std::io::{self, IsTerminal, Read};
 
-use is_terminal::IsTerminal;
-use prompts::{confirm::ConfirmPrompt, Prompt};
+use anyhow::anyhow;
+use cli_prompts::{
+    prompts::AbortReason, prompts::Confirmation, style::ConfirmationStyle, DisplayPrompt,
+};
 
 pub(crate) fn read_password() -> io::Result<String> {
     let mut res = String::new();
     let stdin = io::stdin();
 
-    // TODO: use stdlib once stable:
-    // https://doc.rust-lang.org/std/io/struct.Stdin.html#impl-IsTerminal-for-Stdin
     if stdin.is_terminal() {
         res = rpassword::prompt_password("password: ")?;
     } else {
@@ -25,8 +25,11 @@ pub(crate) fn read_stdin_to_string() -> io::Result<String> {
 }
 
 pub(crate) async fn confirm(question: &str) -> anyhow::Result<bool> {
-    match ConfirmPrompt::new(question).run().await? {
-        Some(res) => Ok(res),
-        None => Ok(false),
-    }
+    let prompt = Confirmation::new(question)
+        .default_positive(false)
+        .style(ConfirmationStyle::default());
+    prompt.display().map_err(|e| match e {
+        AbortReason::Interrupt => anyhow!("interrupted by user"),
+        AbortReason::Error(e) => anyhow!(e),
+    })
 }

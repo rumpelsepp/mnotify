@@ -11,21 +11,19 @@ license = "MIT"
 
 [dependencies]
 anyhow = { version = "1.0.71", features = ["backtrace"] }
-base64 = "0.21.0"
 clap = { version = "4.2.7", features = ["derive", "cargo"] }
 clap-verbosity-flag = "2.0.1"
 futures = "0.3.26"
-is-terminal = "0.4.4"
 keyring = "2.0.1"
 log = "0.4.17"
 matrix-sdk-crypto = "0.7.0"
 mime = "0.3.17"
-prompts = "0.1.0"
+cli-prompts = "0.1.0"
 reqwest = { version = "0.11.23", features = ["native-tls-vendored"] }
 rpassword = "7.2.0"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.96"
-tokio = { version = "1.28.2", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.31.0", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1.37"
 tracing-subscriber = "0.3.17"
 xdg = "2.4.1"
