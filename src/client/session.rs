@@ -5,8 +5,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use anyhow::bail;
-use matrix_sdk::ruma::{OwnedUserId, UserId};
 use matrix_sdk::matrix_auth::MatrixSession;
+use matrix_sdk::ruma::{OwnedUserId, UserId};
 use serde::{Deserialize, Serialize};
 use tracing::error;
 
@@ -65,7 +65,10 @@ fn persist_session_json(path: impl AsRef<Path>, session: &MatrixSession) -> anyh
     Ok(())
 }
 
-fn persist_session_keyring(user_id: impl AsRef<UserId>, session: &MatrixSession) -> anyhow::Result<()> {
+fn persist_session_keyring(
+    user_id: impl AsRef<UserId>,
+    session: &MatrixSession,
+) -> anyhow::Result<()> {
     let entry = keyring::Entry::new(CRATE_NAME, user_id.as_ref().as_str())?;
     entry.set_password(&serde_json::to_string(session)?)?;
     Ok(())

@@ -173,8 +173,8 @@ async fn on_room_message(
     receipt: bool,
 ) -> anyhow::Result<()> {
     match room.state() {
-        RoomState::Joined => {},
-        _ => return Ok(())
+        RoomState::Joined => {}
+        _ => return Ok(()),
     }
 
     let raw_json = event.clone().into_json();
@@ -310,25 +310,19 @@ async fn main() -> anyhow::Result<()> {
 
             println!("{}", serde_json::to_string(&events)?);
         }
-        Command::Rooms { room_id} => {
+        Command::Rooms { room_id } => {
             let out = match room_id {
                 Some(room_id) => {
                     let Some(room) = client.get_room(&room_id) else {
                         bail!("no such room: {}", room_id);
                     };
-                    let output = client
-                        .query_room(room)
-                        .await?;
+                    let output = client.query_room(room).await?;
                     serde_json::to_string(&output)?
                 }
                 None => {
                     let mut output = vec![];
                     for room in client.rooms() {
-                        output.push(
-                            client
-                                .query_room(room)
-                                .await?,
-                        );
+                        output.push(client.query_room(room).await?);
                     }
                     serde_json::to_string(&output)?
                 }

@@ -98,13 +98,13 @@ impl super::Client {
                     let Some(request) = client
                         .encryption()
                         .get_verification_request(&ev.sender, &ev.event_id)
-                        .await else {
+                        .await
+                    else {
                         tracing::warn!("creating verification request failed");
                         return;
                     };
 
-                    let Ok(()) = request
-                        .accept().await else {
+                    let Ok(()) = request.accept().await else {
                         tracing::warn!("can't accept verification request");
                         return;
                     };
