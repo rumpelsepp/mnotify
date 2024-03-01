@@ -12,7 +12,7 @@ license = "MIT"
 [dependencies]
 anyhow = { version = "1.0.71", features = ["backtrace"] }
 clap = { version = "4.2.7", features = ["derive", "cargo"] }
-clap-verbosity-flag = "2.0.1"
+clap-verbosity-flag = "2.2.0"
 futures = "0.3.26"
 keyring = "2.0.1"
 log = "0.4.17"
