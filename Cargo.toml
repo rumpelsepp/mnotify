@@ -15,7 +15,7 @@ clap = { version = "4.2.7", features = ["derive", "cargo"] }
 clap-verbosity-flag = "2.0.1"
 futures = "0.3.26"
 keyring = "2.0.1"
-log = "0.4.17"
+log = "0.4.21"
 matrix-sdk-crypto = "0.7.0"
 mime = "0.3.17"
 cli-prompts = "0.1.0"
