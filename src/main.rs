@@ -1,19 +1,18 @@
 use std::env;
 use std::path::PathBuf;
 
-use anyhow::bail;
+use anyhow::{Context, bail};
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
 use futures::StreamExt;
 use matrix_sdk::config::SyncSettings;
-use matrix_sdk::deserialized_responses::SyncTimelineEvent;
-use matrix_sdk::room::Room;
 use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
+use matrix_sdk::ruma::events::AnySyncTimelineEvent;
 use matrix_sdk::ruma::events::receipt::ReceiptThread;
 use matrix_sdk::ruma::presence::PresenceState;
-use matrix_sdk::ruma::{events::AnySyncTimelineEvent, serde::Raw};
+use matrix_sdk::ruma::serde::Raw;
 use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId, OwnedUserId};
-use matrix_sdk::RoomState;
+use matrix_sdk::{Room, RoomState};
 use serde::Serialize;
 use serde_json::value::RawValue;
 
@@ -21,9 +20,8 @@ mod client;
 mod mime;
 mod outputs;
 mod terminal;
-mod util;
 
-use crate::client::{session, Client};
+use crate::client::{Client, TextKind, session};
 
 const CRATE_NAME: &str = clap::crate_name!();
 
@@ -172,41 +170,28 @@ async fn on_room_message(
     room: Room,
     receipt: bool,
 ) -> anyhow::Result<()> {
-    match room.state() {
-        RoomState::Joined => {}
-        _ => return Ok(()),
+    if room.state() != RoomState::Joined {
+        return Ok(());
     }
 
-    let raw_json = event.clone().into_json();
-    let parsed_event: SyncTimelineEvent = event.into();
-    let event_id = parsed_event.event_id();
-
-    if receipt {
-        if let Some(event_id) = event_id {
-            room.send_single_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, event_id)
-                .await?;
-        }
+    if receipt && let Some(event_id) = event.get_field::<OwnedEventId>("event_id")? {
+        room.send_single_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, event_id)
+            .await?;
     }
 
-    println!("{}", raw_json);
+    println!("{}", event.into_json());
     Ok(())
 }
 
 async fn create_client(cmd: &Command) -> anyhow::Result<Client> {
     match cmd {
         Command::Login {
-            ref user_id,
-            ref device_name,
-            password: _,
-        } => {
-            Client::builder()
-                .user_id(user_id.to_owned())
-                .device_name(device_name.to_owned())
-                .build()
-                .await
-        }
-        Command::Clean { user_id } => Client::builder().user_id(user_id.to_owned()).build().await,
-        _ => Client::builder().load_meta()?.build().await?.ensure_login(),
+            user_id,
+            device_name,
+            ..
+        } => Client::new(user_id.clone(), device_name.clone()).await,
+        Command::Clean { user_id } => Client::new(user_id.clone(), CRATE_NAME.to_string()).await,
+        _ => Client::from_meta().await?.ensure_logged_in(),
     }
 }
 
@@ -218,7 +203,7 @@ async fn main() -> anyhow::Result<()> {
         .set_presence(args.presense);
 
     tracing_subscriber::fmt()
-        .with_max_level(util::convert_filter(args.verbose.log_level_filter()))
+        .with_max_level(args.verbose.tracing_level_filter())
         .init();
 
     let client = create_client(&args.command).await?;
@@ -235,8 +220,19 @@ async fn main() -> anyhow::Result<()> {
             force,
             include_token,
         } => {
-            let home_server = client.homeserver().to_string();
-            let user_id = client.user_id().unwrap().to_string();
+            let token = if include_token {
+                if !force {
+                    eprintln!(
+                        "Refusing to print the access token without -f/--force.\n\
+                         Keep it secret: it grants full access to your account and must \
+                         never be published or stored as plaintext."
+                    );
+                    std::process::exit(1);
+                }
+                client.access_token()
+            } else {
+                None
+            };
 
             #[derive(Serialize)]
             struct HomeserverOutput {
@@ -245,26 +241,11 @@ async fn main() -> anyhow::Result<()> {
                 token: Option<String>,
             }
 
-            let mut out = HomeserverOutput {
-                home_server,
-                user_id,
-                token: None,
+            let out = HomeserverOutput {
+                home_server: client.homeserver().to_string(),
+                user_id: client.user_id().unwrap().to_string(),
+                token,
             };
-
-            if include_token {
-                if !force {
-                    eprintln!("!!!!!!!!!!!!!!!!!!!!!! WARNING !!!!!!!!!!!!!!!!!!!!!!!!!");
-                    eprintln!("!!        Keep this token secret at all times         !!");
-                    eprintln!("!! Do not publish it and do not store it as plaintext !!");
-                    eprintln!("!!!!!!!!!!!!!!!!!!!!!! WARNING !!!!!!!!!!!!!!!!!!!!!!!!!");
-                    eprintln!();
-                    eprintln!(
-                        "Use -f/--force to display the token if you know what you are doing!"
-                    );
-                    std::process::exit(1);
-                }
-                out.token = client.access_token();
-            }
 
             println!("{}", serde_json::to_string(&out)?);
         }
@@ -282,13 +263,14 @@ async fn main() -> anyhow::Result<()> {
             }
 
             let password = match password {
-                None => terminal::read_password()?,
                 Some(p) => p,
+                None => terminal::read_password()?,
             };
 
-            if let Err(e) = client.login_password(&password).await {
-                bail!("login failed: {}", e);
-            }
+            client
+                .login_password(&password)
+                .await
+                .context("login failed")?;
 
             session::Meta {
                 user_id,
@@ -304,7 +286,7 @@ async fn main() -> anyhow::Result<()> {
             let events: Vec<Box<RawValue>> = msgs
                 .chunk
                 .into_iter()
-                .map(|e| e.event.into_json())
+                .map(|e| e.into_raw().into_json())
                 .rev()
                 .collect();
 
@@ -320,7 +302,7 @@ async fn main() -> anyhow::Result<()> {
                     serde_json::to_string(&output)?
                 }
                 None => {
-                    let mut output = vec![];
+                    let mut output = Vec::new();
                     for room in client.rooms() {
                         output.push(client.query_room(room).await?);
                     }
@@ -336,8 +318,7 @@ async fn main() -> anyhow::Result<()> {
             reason,
         } => {
             let room = client.get_joined_room(room_id)?;
-            room.redact(&event_id, reason.as_ref().map(String::as_ref), None)
-                .await?;
+            room.redact(&event_id, reason.as_deref(), None).await?;
         }
         Command::Verify {} => {
             client.set_sas_handlers().await?;
@@ -361,19 +342,20 @@ async fn main() -> anyhow::Result<()> {
                 None => terminal::read_stdin_to_string()?,
             };
 
-            if let Some(ref event_id) = reply_to {
+            if let Some(event_id) = &reply_to {
                 return client
                     .send_message_reply(room_id, event_id, &body, markdown)
                     .await;
             }
 
-            if notice {
-                client.send_notice(room_id, &body, markdown).await?;
+            let kind = if notice {
+                TextKind::Notice
             } else if emote {
-                client.send_emote(room_id, &body, markdown).await?;
+                TextKind::Emote
             } else {
-                client.send_message(room_id, &body, markdown).await?;
-            }
+                TextKind::Text
+            };
+            client.send_text(room_id, &body, kind, markdown).await?;
         }
         Command::Sync {
             room_id,
@@ -387,14 +369,17 @@ async fn main() -> anyhow::Result<()> {
                     println!("{}", serde_json::to_string(&resp)?);
                 }
             } else {
-                if let Some(ref room_id) = room_id {
-                    client.add_room_event_handler(room_id, move |event, room| async move {
-                        on_room_message(event, room, receipt).await
-                    });
-                } else {
-                    client.add_event_handler(move |event, room| async move {
-                        on_room_message(event, room, receipt).await
-                    });
+                match &room_id {
+                    Some(room_id) => {
+                        client.add_room_event_handler(room_id, move |event, room| async move {
+                            on_room_message(event, room, receipt).await
+                        });
+                    }
+                    None => {
+                        client.add_event_handler(move |event, room| async move {
+                            on_room_message(event, room, receipt).await
+                        });
+                    }
                 }
 
                 client.sync(sync_settings.clone()).await?;
@@ -406,7 +391,12 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Whoami => {
             let resp = client.whoami().await?;
-            println!("{}", serde_json::to_string(&resp)?);
+            let out = serde_json::json!({
+                "user_id": resp.user_id,
+                "device_id": resp.device_id,
+                "is_guest": resp.is_guest,
+            });
+            println!("{out}");
         }
     };
 

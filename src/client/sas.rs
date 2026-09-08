@@ -1,7 +1,7 @@
 use futures::stream::StreamExt;
 use matrix_sdk::Client as MatrixClient;
 use matrix_sdk::{
-    encryption::verification::{format_emojis, SasState, SasVerification, Verification},
+    encryption::verification::{SasState, SasVerification, Verification, format_emojis},
     ruma::events::{
         key::verification::{
             request::ToDeviceKeyVerificationRequestEvent,
@@ -58,7 +58,10 @@ async fn sas_verification_handler(sas: SasVerification) {
 
                 break;
             }
-            SasState::Started { .. } | SasState::Accepted { .. } | SasState::Confirmed => (),
+            SasState::Created { .. }
+            | SasState::Started { .. }
+            | SasState::Accepted { .. }
+            | SasState::Confirmed => (),
         }
     }
 }
