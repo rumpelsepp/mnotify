@@ -8,7 +8,7 @@ use matrix_sdk::room::{Messages, MessagesOptions, Room};
 use matrix_sdk::ruma::events::room::message::{
     AddMentions, ForwardThread, RoomMessageEvent, RoomMessageEventContent,
 };
-use matrix_sdk::ruma::{EventId, MxcUri, RoomId};
+use matrix_sdk::ruma::{EventId, RoomId};
 
 /// Which flavour of `m.room.message` to send.
 #[derive(Debug, Clone, Copy)]
@@ -99,24 +99,11 @@ impl super::Client {
         Ok(())
     }
 
-    /// Build an (unauthenticated) HTTP thumbnail URL for an `mxc://` URI.
-    fn mxc_to_http(&self, mxc: &MxcUri) -> String {
-        let (Ok(server), Ok(media_id)) = (mxc.server_name(), mxc.media_id()) else {
-            return String::new();
-        };
-        format!(
-            "{}_matrix/media/v3/thumbnail/{server}/{media_id}?width=50&height=50&method=scale",
-            self.inner.homeserver()
-        )
-    }
-
     pub(crate) async fn query_room(&self, room: Room) -> anyhow::Result<crate::outputs::Room> {
         let mut members = Vec::new();
         for member in room.members(RoomMemberships::empty()).await? {
             members.push(crate::outputs::RoomMember {
-                avatar: member
-                    .avatar_url()
-                    .map_or_else(String::new, |uri| self.mxc_to_http(uri)),
+                avatar: member.avatar_url().map(ToString::to_string),
                 name: member.name().to_owned(),
                 display_name: member.display_name().map(ToOwned::to_owned),
                 user_id: member.user_id().to_string(),
@@ -135,10 +122,7 @@ impl super::Client {
             is_space: room.is_space(),
             history_visibility: room.history_visibility_or_default().to_string(),
             guest_access: room.guest_access().to_string(),
-            avatar: room
-                .avatar_url()
-                .as_deref()
-                .map_or_else(String::new, |uri| self.mxc_to_http(uri)),
+            avatar: room.avatar_url().map(|uri| uri.to_string()),
             matrix_uri: room.matrix_permalink(false).await?.to_string(),
             matrix_to_uri: room.matrix_to_permalink().await?.to_string(),
             unread_notifications: room.unread_notification_counts(),

@@ -27,7 +27,9 @@ pub(crate) struct Room {
     pub(crate) is_public: bool,
     pub(crate) is_space: bool,
     pub(crate) history_visibility: String,
-    pub(crate) avatar: String,
+    /// `mxc://` URI of the room avatar. Media is authenticated (MSC3916), so
+    /// fetch it through an authenticated client, not a plain HTTP GET.
+    pub(crate) avatar: Option<String>,
     pub(crate) matrix_uri: String,
     pub(crate) matrix_to_uri: String,
     pub(crate) unread_notifications: UnreadNotificationsCount,
@@ -39,7 +41,8 @@ pub(crate) struct RoomMember {
     pub(crate) name: String,
     pub(crate) display_name: Option<String>,
     pub(crate) user_id: String,
-    pub(crate) avatar: String,
+    /// `mxc://` URI of the member avatar (see `Room::avatar`).
+    pub(crate) avatar: Option<String>,
 }
 
 #[derive(Serialize)]
