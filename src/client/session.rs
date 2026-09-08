@@ -6,13 +6,56 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use matrix_sdk::authentication::matrix::MatrixSession;
+use matrix_sdk::authentication::oauth::{ClientId, OAuthSession, UserSession};
 use matrix_sdk::ruma::{OwnedUserId, UserId};
-use matrix_sdk::{Client as MatrixClient, SessionTokens};
+use matrix_sdk::{AuthSession, Client as MatrixClient, SessionTokens};
 use rand::distr::{Alphanumeric, SampleString};
 use serde::{Deserialize, Serialize};
 use tracing::error;
 
 use super::CRATE_NAME;
+
+/// A persisted Matrix session, from either authentication API. `OAuthSession`
+/// itself is not `Serialize`, so its two parts are stored separately.
+#[derive(Serialize, Deserialize)]
+pub(crate) enum StoredSession {
+    Matrix(MatrixSession),
+    OAuth {
+        client_id: ClientId,
+        user: UserSession,
+    },
+}
+
+impl StoredSession {
+    fn from_client(client: &MatrixClient) -> Option<Self> {
+        Some(match client.session()? {
+            AuthSession::Matrix(session) => Self::Matrix(session),
+            AuthSession::OAuth(session) => Self::OAuth {
+                client_id: session.client_id,
+                user: session.user,
+            },
+            _ => return None,
+        })
+    }
+
+    fn tokens(&self) -> SessionTokens {
+        match self {
+            Self::Matrix(session) => session.tokens.clone(),
+            Self::OAuth { user, .. } => user.tokens.clone(),
+        }
+    }
+}
+
+impl From<StoredSession> for AuthSession {
+    fn from(session: StoredSession) -> Self {
+        match session {
+            StoredSession::Matrix(session) => Self::Matrix(session),
+            StoredSession::OAuth { client_id, user } => {
+                Self::OAuth(Box::new(OAuthSession { client_id, user }))
+            }
+        }
+    }
+}
 
 fn state_file(relative: impl AsRef<Path>) -> io::Result<PathBuf> {
     xdg::BaseDirectories::with_prefix(CRATE_NAME).place_state_file(relative)
@@ -40,7 +83,7 @@ pub(crate) fn meta_path() -> io::Result<PathBuf> {
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Persisted {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) session: Option<MatrixSession>,
+    pub(crate) session: Option<StoredSession>,
     pub(crate) store_passphrase: String,
 }
 
@@ -130,10 +173,7 @@ pub(super) fn load_or_init(user_id: &UserId) -> anyhow::Result<Persisted> {
 /// store passphrase. Used as matrix-sdk's save-session callback so a rotated
 /// access/refresh token is not lost when the process exits.
 pub(super) fn resave_session(user_id: &UserId, client: &MatrixClient) -> anyhow::Result<()> {
-    let session = client
-        .matrix_auth()
-        .session()
-        .context("client has no session to save")?;
+    let session = StoredSession::from_client(client).context("client has no session to save")?;
     let store = SessionStore::for_user(user_id)?;
     let mut persisted = store.read_or_init()?;
     persisted.session = Some(session);
@@ -146,7 +186,7 @@ pub(super) fn stored_tokens(user_id: &UserId) -> anyhow::Result<SessionTokens> {
     SessionStore::for_user(user_id)?
         .read()?
         .and_then(|p| p.session)
-        .map(|s| s.tokens)
+        .map(|s| s.tokens())
         .context("no stored session tokens to reload")
 }
 

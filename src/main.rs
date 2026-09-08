@@ -63,8 +63,12 @@ enum Command {
     Login {
         user_id: OwnedUserId,
 
-        #[arg(short, long)]
+        #[arg(short, long, conflicts_with = "qr")]
         password: Option<String>,
+
+        /// Log in via OAuth 2.0 by scanning a QR code from another device
+        #[arg(long)]
+        qr: bool,
 
         #[arg(short, long, default_value = CRATE_NAME)]
         device_name: String,
@@ -287,6 +291,7 @@ async fn main() -> anyhow::Result<()> {
             user_id,
             device_name,
             password,
+            qr,
         } => {
             if client.logged_in() {
                 bail!("already logged in");
@@ -296,15 +301,24 @@ async fn main() -> anyhow::Result<()> {
                 bail!("meta exists");
             }
 
-            let password = match password {
-                Some(p) => p,
-                None => terminal::read_password()?,
-            };
+            if qr {
+                client.login_qr().await.context("QR login failed")?;
+            } else {
+                let password = match password {
+                    Some(p) => p,
+                    None => terminal::read_password()?,
+                };
+                client
+                    .login_password(&password)
+                    .await
+                    .context("login failed")?;
+            }
 
-            client
-                .login_password(&password)
-                .await
-                .context("login failed")?;
+            anyhow::ensure!(
+                client.user_id().is_some_and(|u| u == user_id),
+                "logged in as {:?}, not {user_id}",
+                client.user_id(),
+            );
 
             session::Meta {
                 user_id,

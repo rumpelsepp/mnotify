@@ -7,6 +7,7 @@ use matrix_sdk::ruma::OwnedUserId;
 
 use crate::CRATE_NAME;
 
+pub mod login;
 pub mod recovery;
 pub mod room;
 pub mod sas;
@@ -58,7 +59,10 @@ impl Client {
         )?;
 
         if let Some(session) = persisted.session {
-            client.inner.restore_session(session).await?;
+            client
+                .inner
+                .restore_session(matrix_sdk::AuthSession::from(session))
+                .await?;
         }
 
         Ok(client)
@@ -72,21 +76,12 @@ impl Client {
     }
 
     pub(crate) fn logged_in(&self) -> bool {
-        self.inner.matrix_auth().logged_in()
+        self.inner.session().is_some()
     }
 
     pub(crate) fn ensure_logged_in(self) -> anyhow::Result<Self> {
         anyhow::ensure!(self.logged_in(), "client not logged in");
         Ok(self)
-    }
-
-    pub(crate) async fn login_password(&self, password: &str) -> anyhow::Result<()> {
-        self.inner
-            .matrix_auth()
-            .login_username(&self.user_id, password)
-            .initial_device_display_name(&self.device_name)
-            .await?;
-        self.persist_session()
     }
 }
 
