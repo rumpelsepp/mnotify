@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
 use futures::StreamExt;
 use matrix_sdk::config::SyncSettings;
+use matrix_sdk::ruma::api::client::filter::FilterDefinition;
 use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
 use matrix_sdk::ruma::events::AnySyncTimelineEvent;
 use matrix_sdk::ruma::events::receipt::ReceiptThread;
@@ -198,7 +199,11 @@ async fn create_client(cmd: &Command) -> anyhow::Result<Client> {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
+    // Lazy-load room members: a large account syncs a lot faster this way, and
+    // the sync token is persisted in the SQLite store by the SDK, so repeated
+    // invocations only fetch the delta.
     let sync_settings = SyncSettings::default()
+        .filter(FilterDefinition::with_lazy_loading().into())
         .full_state(args.full_state)
         .set_presence(args.presense);
 
