@@ -1,38 +1,34 @@
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
-use anyhow::{anyhow, bail};
+use anyhow::{Context, bail};
 use tracing::warn;
 
-pub fn guess_mime_file(path: impl AsRef<Path>) -> anyhow::Result<mime::Mime> {
-    let child = Command::new("file")
+/// Guess a MIME type by asking the `file` tool.
+fn guess_mime_file(path: &Path) -> anyhow::Result<mime::Mime> {
+    let output = Command::new("file")
         .arg("--mime")
-        .arg(path.as_ref().as_os_str())
-        .stdout(Stdio::piped())
-        .spawn()?;
-
-    let output = child.wait_with_output()?;
+        .arg(path)
+        .output()
+        .context("could not run the `file` tool")?;
 
     if !output.status.success() {
-        bail!("the file tool failed with exit code: {}", output.status);
+        bail!("the `file` tool failed with {}", output.status);
     }
 
-    let raw_output = String::from_utf8(output.stdout)?;
-    let raw_mime = raw_output
+    let stdout = String::from_utf8(output.stdout)?;
+    let mime = stdout
         .split_once(':')
-        .map(|x| x.1)
-        .ok_or(anyhow!("bug? no mime in output"))?
-        .trim();
+        .map(|(_, mime)| mime.trim())
+        .context("no MIME type in `file` output")?;
 
-    Ok(raw_mime.parse()?)
+    Ok(mime.parse()?)
 }
 
-pub fn guess_mime_extension(path: impl AsRef<Path>) -> anyhow::Result<mime::Mime> {
-    let extension = path.as_ref().extension();
-
-    let res = match extension {
-        None => mime::APPLICATION_OCTET_STREAM,
-        Some(s) => match s.to_str().unwrap().to_lowercase().as_str() {
+/// Guess a MIME type from the file extension alone.
+fn guess_mime_extension(path: &Path) -> mime::Mime {
+    match path.extension().and_then(|s| s.to_str()) {
+        Some(ext) => match ext.to_ascii_lowercase().as_str() {
             "jpg" | "jpeg" => mime::IMAGE_JPEG,
             "gif" => mime::IMAGE_GIF,
             "png" => mime::IMAGE_PNG,
@@ -41,18 +37,17 @@ pub fn guess_mime_extension(path: impl AsRef<Path>) -> anyhow::Result<mime::Mime
             "mp3" => "audio/mp3".parse().unwrap(),
             _ => mime::APPLICATION_OCTET_STREAM,
         },
-    };
-
-    Ok(res)
+        None => mime::APPLICATION_OCTET_STREAM,
+    }
 }
 
 pub(crate) fn guess_mime(path: impl AsRef<Path>) -> anyhow::Result<mime::Mime> {
-    match guess_mime_file(&path) {
+    let path = path.as_ref();
+    match guess_mime_file(path) {
         Ok(mime) => Ok(mime),
         Err(e) => {
-            warn!("getting mimetype with `file` tool failed: {:?}", e);
-            warn!("choosing mimetype from file extension");
-            guess_mime_extension(&path)
+            warn!("`file` tool failed ({e}), guessing MIME type from the extension");
+            Ok(guess_mime_extension(path))
         }
     }
 }
