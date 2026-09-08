@@ -1,7 +1,11 @@
+use anyhow::Context;
 use futures::stream::StreamExt;
 use matrix_sdk::Client as MatrixClient;
+use matrix_sdk::ruma::DeviceId;
 use matrix_sdk::{
-    encryption::verification::{SasState, SasVerification, Verification, format_emojis},
+    encryption::verification::{
+        SasState, SasVerification, Verification, VerificationRequestState, format_emojis,
+    },
     ruma::events::{
         key::verification::{
             request::ToDeviceKeyVerificationRequestEvent,
@@ -19,8 +23,9 @@ async fn sas_verification_handler(sas: SasVerification) {
 
     println!("Starting verification with {other_user_id} {other_device_id}");
 
-    // print_devices(sas.other_device().user_id(), &client).await;
-    sas.accept().await.unwrap();
+    if !sas.we_started() {
+        sas.accept().await.unwrap();
+    }
 
     let mut stream = sas.changes();
 
@@ -67,6 +72,41 @@ async fn sas_verification_handler(sas: SasVerification) {
 }
 
 impl super::Client {
+    /// Start an interactive SAS verification of one of our own devices. Requires
+    /// a sync to be running concurrently so the other side's replies arrive.
+    pub(crate) async fn verify_device(&self, device_id: &DeviceId) -> anyhow::Result<()> {
+        let user_id = self.inner.user_id().context("not logged in")?.to_owned();
+        let device = self
+            .inner
+            .encryption()
+            .get_device(&user_id, device_id)
+            .await?
+            .context("no such device")?;
+
+        let request = device.request_verification().await?;
+        eprintln!("Verification request sent; accept it on the other device.");
+
+        let mut changes = request.changes();
+        while let Some(state) = changes.next().await {
+            match state {
+                VerificationRequestState::Ready { .. } => {
+                    if let Some(sas) = request.start_sas().await? {
+                        sas_verification_handler(sas).await;
+                    }
+                }
+                VerificationRequestState::Transitioned {
+                    verification: Verification::SasV1(sas),
+                } => sas_verification_handler(sas).await,
+                VerificationRequestState::Done => break,
+                VerificationRequestState::Cancelled(info) => {
+                    anyhow::bail!("verification cancelled: {}", info.reason());
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) async fn set_sas_handlers(&self) -> anyhow::Result<()> {
         self.inner.add_event_handler(
             |ev: ToDeviceKeyVerificationRequestEvent, client: MatrixClient| async move {

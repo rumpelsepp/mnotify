@@ -155,8 +155,12 @@ enum Command {
         #[arg(long)]
         disable: bool,
     },
-    /// React to emojic verification requests
-    Verify {},
+    /// Verify this session: react to incoming requests, or start one with --device
+    Verify {
+        /// Device ID of one of your own devices to start verifying
+        #[arg(long)]
+        device: Option<matrix_sdk::ruma::OwnedDeviceId>,
+    },
     /// Manage key backup and cross-signing recovery
     Recovery {
         #[command(subcommand)]
@@ -368,10 +372,18 @@ async fn main() -> anyhow::Result<()> {
             let room = client.get_joined_room(room_id)?;
             room.redact(&event_id, reason.as_deref(), None).await?;
         }
-        Command::Verify {} => {
-            client.set_sas_handlers().await?;
-            client.sync(sync_settings.clone()).await?;
-        }
+        Command::Verify { device } => match device {
+            Some(device_id) => {
+                tokio::select! {
+                    r = client.verify_device(&device_id) => r?,
+                    r = client.sync(sync_settings.clone()) => r?,
+                }
+            }
+            None => {
+                client.set_sas_handlers().await?;
+                client.sync(sync_settings.clone()).await?;
+            }
+        },
         Command::Recovery { action } => match action {
             RecoveryAction::Status => {
                 println!("{}", client.recovery_status().await?);
