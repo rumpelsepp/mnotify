@@ -153,8 +153,31 @@ enum Command {
     },
     /// React to emojic verification requests
     Verify {},
+    /// Manage key backup and cross-signing recovery
+    Recovery {
+        #[command(subcommand)]
+        action: RecoveryAction,
+    },
     /// Ask the homeserver who we are
     Whoami,
+}
+
+#[derive(Debug, Subcommand)]
+enum RecoveryAction {
+    /// Print recovery, key-backup and cross-signing status
+    Status,
+    /// Bootstrap cross-signing and key backup, then print the recovery key
+    Enable {
+        /// Password for user-interactive auth; read interactively if omitted
+        #[arg(short, long)]
+        password: Option<String>,
+    },
+    /// Restore secrets from a recovery key (read from stdin if omitted)
+    Recover { recovery_key: Option<String> },
+    /// Replace the recovery key with a fresh one
+    Reset,
+    /// Turn off recovery and delete the server-side key backup
+    Disable,
 }
 
 impl Command {
@@ -335,6 +358,33 @@ async fn main() -> anyhow::Result<()> {
             client.set_sas_handlers().await?;
             client.sync(sync_settings.clone()).await?;
         }
+        Command::Recovery { action } => match action {
+            RecoveryAction::Status => {
+                println!("{}", client.recovery_status().await?);
+            }
+            RecoveryAction::Enable { password } => {
+                let password = match password {
+                    Some(p) => p,
+                    None => terminal::read_password()?,
+                };
+                let key = client.recovery_enable(&password).await?;
+                println!("{}", serde_json::json!({ "recovery_key": key }));
+            }
+            RecoveryAction::Recover { recovery_key } => {
+                let key = match recovery_key {
+                    Some(k) => k,
+                    None => terminal::read_stdin_to_string()?,
+                };
+                client.recovery_recover(&key).await?;
+            }
+            RecoveryAction::Reset => {
+                let key = client.recovery_reset().await?;
+                println!("{}", serde_json::json!({ "recovery_key": key }));
+            }
+            RecoveryAction::Disable => {
+                client.recovery_disable().await?;
+            }
+        },
         Command::Send {
             room_id,
             reply_to,

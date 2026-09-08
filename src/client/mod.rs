@@ -7,6 +7,7 @@ use matrix_sdk::ruma::OwnedUserId;
 
 use crate::CRATE_NAME;
 
+pub mod recovery;
 pub mod room;
 pub mod sas;
 pub mod session;
