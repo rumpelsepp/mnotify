@@ -63,12 +63,20 @@ enum Command {
     Login {
         user_id: OwnedUserId,
 
-        #[arg(short, long, conflicts_with = "qr")]
+        #[arg(short, long, conflicts_with_all = ["qr", "sso"])]
         password: Option<String>,
 
-        /// Log in via OAuth 2.0 by scanning a QR code from another device
-        #[arg(long)]
+        /// Log in via the OAuth 2.0 device grant: `mn` shows a QR code to scan
+        #[arg(long, conflicts_with = "sso")]
         qr: bool,
+
+        /// Log in via the homeserver's SSO flow (e.g. SAML) in a browser
+        #[arg(long)]
+        sso: bool,
+
+        /// SSO identity provider id (only with --sso; omit to use the server's picker)
+        #[arg(long, requires = "sso")]
+        idp: Option<String>,
 
         #[arg(short, long, default_value = CRATE_NAME)]
         device_name: String,
@@ -296,6 +304,8 @@ async fn main() -> anyhow::Result<()> {
             device_name,
             password,
             qr,
+            sso,
+            idp,
         } => {
             if client.logged_in() {
                 bail!("already logged in");
@@ -305,7 +315,12 @@ async fn main() -> anyhow::Result<()> {
                 bail!("meta exists");
             }
 
-            if qr {
+            if sso {
+                client
+                    .login_sso(idp.as_deref())
+                    .await
+                    .context("SSO login failed")?;
+            } else if qr {
                 client.login_qr().await.context("QR login failed")?;
             } else {
                 let password = match password {

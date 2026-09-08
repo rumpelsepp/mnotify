@@ -18,12 +18,19 @@ futures = "0.3.26"
 image = { version = "0.25.10", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
 keyring = "4.2.0"
 mime = "0.3.17"
+qrcode = { version = "0.14.1", default-features = false }
 rand = "0.9.0"
 cli-prompts = "0.1.1"
 rpassword = "7.2.0"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.96"
-tokio = { version = "1.31.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.31.0", features = [
+    "macros",
+    "rt-multi-thread",
+    "net",
+    "io-std",
+    "io-util",
+] }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 xdg = "3.0.0"

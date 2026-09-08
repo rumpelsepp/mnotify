@@ -17,8 +17,7 @@ Requires Rust 1.93 or newer (Rust edition 2024, matrix-sdk 0.18).
 
 ## Get Started
 
-Obtain a fresh matrix user account on an arbitrary homeserver.
-If you need help, checkout the matrix channel [#mnotify:hackbrettl.de](https://matrix.to/#/#mnotify:hackbrettl.de).
+Obtain a fresh matrix user account on an arbitrary homeserver or use an existing one.
 
 ### Login (Password)
 
@@ -39,19 +38,29 @@ daemon set `MN_NO_KEYRING`; the secrets then live in a `0600` file
 ### Login (QR code)
 
 Homeservers backed by a next-generation auth server (OAuth 2.0 / MAS, e.g.
-matrix.org) no longer accept password logins from new clients. Log in by
-scanning a QR code shown by an already signed-in device instead:
+matrix.org) no longer accept password logins from new clients. Instead:
 
 ```
 $ mn login @user:example.org --qr
 ```
 
-`mn` asks for the base64 payload of the QR code. On a headless box, decode the
-QR image you took of the other device, e.g.:
+`mn` prints a QR code in the terminal. Open an already signed-in Element,
+choose "Link new device" / "Sign in with QR code", scan the terminal, and
+type the two-digit check code Element shows back into `mn`.
+
+### Login (SSO / SAML)
+
+If your homeserver has an SSO button on the Element login page (enterprise
+SAML, OIDC, ...):
 
 ```
-$ grim -g "$(slurp)" - | zbarimg --oneshot -Sbinary PNG:- | base64 -w0
+$ mn login @user:example.org --sso
 ```
+
+`mn` prints the homeserver's SSO URL and waits for the browser redirect on a
+local port. Open the URL, sign in, done. On a headless box, forward the port
+first (the command prints the exact `ssh -L ...` line). Use `--idp <id>` to
+skip the server's identity-provider picker.
 
 ### Verify the device / recover history
 

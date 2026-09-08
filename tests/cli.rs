@@ -49,15 +49,21 @@ fn send_requires_a_room() {
 }
 
 #[test]
-fn login_password_and_qr_conflict() {
-    mn().args([
-        "login",
-        "@user:example.org",
-        "--qr",
-        "--password",
-        "hunter2",
-    ])
-    .assert()
-    .failure()
-    .stderr(predicate::str::contains("cannot be used with"));
+fn login_methods_are_mutually_exclusive() {
+    for extra in [["--qr"].as_slice(), ["--sso"].as_slice()] {
+        let mut cmd = mn();
+        cmd.args(["login", "@user:example.org", "--password", "hunter2"])
+            .args(extra)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("cannot be used with"));
+    }
+}
+
+#[test]
+fn idp_requires_sso() {
+    mn().args(["login", "@user:example.org", "--idp", "saml"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--sso"));
 }
