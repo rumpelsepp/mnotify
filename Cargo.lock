@@ -2660,6 +2660,7 @@ dependencies = [
  "matrix-sdk",
  "mime",
  "predicates",
+ "rand 0.9.5",
  "rpassword",
  "serde",
  "serde_json",

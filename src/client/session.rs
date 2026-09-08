@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::ruma::{OwnedUserId, UserId};
+use rand::distr::{Alphanumeric, SampleString};
 use serde::{Deserialize, Serialize};
 use tracing::error;
 
@@ -21,7 +22,7 @@ fn session_json_path(user_id: &UserId) -> io::Result<PathBuf> {
 }
 
 pub(crate) fn state_db_path(user_id: &UserId) -> io::Result<PathBuf> {
-    state_file(Path::new(user_id.as_str()).join("state.sled"))
+    state_file(Path::new(user_id.as_str()).join("store"))
 }
 
 pub(crate) fn meta_path() -> io::Result<PathBuf> {
@@ -31,10 +32,26 @@ pub(crate) fn meta_path() -> io::Result<PathBuf> {
     }
 }
 
-/// Where the Matrix session (i.e. the access token) is kept.
-///
-/// The OS keyring is used by default; setting `MN_NO_KEYRING` falls back to a
-/// `0600` JSON file next to the state store.
+/// Everything that has to survive between invocations and must stay secret: the
+/// Matrix session (access token) and the passphrase of the encrypted SQLite
+/// store. Kept together in the OS keyring, or -- with `MN_NO_KEYRING` -- in a
+/// `0600` JSON file next to the store.
+#[derive(Serialize, Deserialize)]
+pub(crate) struct Persisted {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) session: Option<MatrixSession>,
+    pub(crate) store_passphrase: String,
+}
+
+impl Persisted {
+    fn fresh() -> Self {
+        Self {
+            session: None,
+            store_passphrase: Alphanumeric.sample_string(&mut rand::rng(), 32),
+        }
+    }
+}
+
 enum SessionStore {
     Keyring(keyring::Entry),
     File(PathBuf),
@@ -52,7 +69,7 @@ impl SessionStore {
         }
     }
 
-    fn load(&self) -> anyhow::Result<Option<MatrixSession>> {
+    fn read(&self) -> anyhow::Result<Option<Persisted>> {
         let raw = match self {
             Self::Keyring(entry) => match entry.get_password() {
                 Ok(raw) => raw,
@@ -68,8 +85,8 @@ impl SessionStore {
         Ok(Some(serde_json::from_str(&raw)?))
     }
 
-    fn persist(&self, session: &MatrixSession) -> anyhow::Result<()> {
-        let json = serde_json::to_string(session)?;
+    fn write(&self, persisted: &Persisted) -> anyhow::Result<()> {
+        let json = serde_json::to_string(persisted)?;
         match self {
             Self::Keyring(entry) => entry.set_password(&json)?,
             Self::File(path) => {
@@ -87,6 +104,25 @@ impl SessionStore {
         }
         Ok(())
     }
+
+    /// Read the stored blob, creating one with a fresh store passphrase when
+    /// none exists yet (i.e. before the first login).
+    fn read_or_init(&self) -> anyhow::Result<Persisted> {
+        match self.read()? {
+            Some(persisted) => Ok(persisted),
+            None => {
+                let persisted = Persisted::fresh();
+                self.write(&persisted)?;
+                Ok(persisted)
+            }
+        }
+    }
+}
+
+/// Load the persisted blob for `user_id`, initialising it (with a fresh store
+/// passphrase, no session yet) if this is the first run.
+pub(super) fn load_or_init(user_id: &UserId) -> anyhow::Result<Persisted> {
+    SessionStore::for_user(user_id)?.read_or_init()
 }
 
 fn remove_state_db(user_id: &UserId) -> anyhow::Result<()> {
@@ -104,17 +140,16 @@ impl super::Client {
         SessionStore::for_user(&self.user_id)
     }
 
-    pub(super) fn load_session(&self) -> anyhow::Result<Option<MatrixSession>> {
-        self.session_store()?.load()
-    }
-
     pub(super) fn persist_session(&self) -> anyhow::Result<()> {
         let session = self
             .inner
             .matrix_auth()
             .session()
             .context("no Matrix session to persist")?;
-        self.session_store()?.persist(&session)
+        let store = self.session_store()?;
+        let mut persisted = store.read_or_init()?;
+        persisted.session = Some(session);
+        store.write(&persisted)
     }
 
     /// Delete the session, the state store and `meta.json`, logging (but not

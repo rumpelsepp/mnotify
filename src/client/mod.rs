@@ -22,9 +22,14 @@ pub(crate) struct Client {
 impl Client {
     /// Build a client for `user_id`, restoring a persisted session if one exists.
     pub(crate) async fn new(user_id: OwnedUserId, device_name: String) -> anyhow::Result<Self> {
+        let persisted = session::load_or_init(&user_id)?;
+
         let mut builder = MatrixClient::builder()
             .server_name(user_id.server_name())
-            .sqlite_store(session::state_db_path(&user_id)?, None);
+            .sqlite_store(
+                session::state_db_path(&user_id)?,
+                Some(&persisted.store_passphrase),
+            );
 
         if let Ok(proxy) = env::var("HTTPS_PROXY") {
             builder = builder.proxy(proxy);
@@ -39,7 +44,7 @@ impl Client {
             device_name,
         };
 
-        if let Some(session) = client.load_session()? {
+        if let Some(session) = persisted.session {
             client.inner.restore_session(session).await?;
         }
 
