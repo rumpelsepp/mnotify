@@ -1,9 +1,10 @@
-on: [push]
+on: [push, pull_request]
 
-name: cargo checks
+name: ci
 
 env:
   RUSTFLAGS: "-Dwarnings"
+  CARGO_TERM_COLOR: always
 
 jobs:
   check:
@@ -14,9 +15,18 @@ jobs:
       - name: Run format check
         run: cargo fmt --check
 
-      - name: Run cargo check
-        run: cargo check
-
       - name: Run clippy
-        # run: cargo clippy --all-targets --all-features
-        run: cargo clippy
+        run: cargo clippy --all-targets
+
+      - name: Run tests
+        run: cargo test
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Audit dependencies for security advisories
+        uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
