@@ -26,6 +26,7 @@ impl Client {
 
         let mut builder = MatrixClient::builder()
             .server_name(user_id.server_name())
+            .handle_refresh_tokens()
             .sqlite_store(
                 session::state_db_path(&user_id)?,
                 Some(&persisted.store_passphrase),
@@ -43,6 +44,17 @@ impl Client {
             user_id,
             device_name,
         };
+
+        // Persist a rotated access/refresh token synchronously whenever
+        // matrix-sdk refreshes it, so the next `mn` invocation still works.
+        let user_id = client.user_id.clone();
+        client.inner.set_session_callbacks(
+            Box::new({
+                let user_id = user_id.clone();
+                move |_| session::stored_tokens(&user_id).map_err(Into::into)
+            }),
+            Box::new(move |c| session::resave_session(&user_id, &c).map_err(Into::into)),
+        )?;
 
         if let Some(session) = persisted.session {
             client.inner.restore_session(session).await?;

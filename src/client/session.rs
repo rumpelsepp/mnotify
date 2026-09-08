@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::ruma::{OwnedUserId, UserId};
+use matrix_sdk::{Client as MatrixClient, SessionTokens};
 use rand::distr::{Alphanumeric, SampleString};
 use serde::{Deserialize, Serialize};
 use tracing::error;
@@ -125,6 +126,30 @@ pub(super) fn load_or_init(user_id: &UserId) -> anyhow::Result<Persisted> {
     SessionStore::for_user(user_id)?.read_or_init()
 }
 
+/// Overwrite the stored session with the client's current one, keeping the
+/// store passphrase. Used as matrix-sdk's save-session callback so a rotated
+/// access/refresh token is not lost when the process exits.
+pub(super) fn resave_session(user_id: &UserId, client: &MatrixClient) -> anyhow::Result<()> {
+    let session = client
+        .matrix_auth()
+        .session()
+        .context("client has no session to save")?;
+    let store = SessionStore::for_user(user_id)?;
+    let mut persisted = store.read_or_init()?;
+    persisted.session = Some(session);
+    store.write(&persisted)
+}
+
+/// Read the stored token pair back (matrix-sdk's reload-session callback, used
+/// when another process refreshed the token first).
+pub(super) fn stored_tokens(user_id: &UserId) -> anyhow::Result<SessionTokens> {
+    SessionStore::for_user(user_id)?
+        .read()?
+        .and_then(|p| p.session)
+        .map(|s| s.tokens)
+        .context("no stored session tokens to reload")
+}
+
 fn remove_state_db(user_id: &UserId) -> anyhow::Result<()> {
     fs::remove_dir_all(state_db_path(user_id)?)?;
     Ok(())
@@ -141,15 +166,7 @@ impl super::Client {
     }
 
     pub(super) fn persist_session(&self) -> anyhow::Result<()> {
-        let session = self
-            .inner
-            .matrix_auth()
-            .session()
-            .context("no Matrix session to persist")?;
-        let store = self.session_store()?;
-        let mut persisted = store.read_or_init()?;
-        persisted.session = Some(session);
-        store.write(&persisted)
+        resave_session(&self.user_id, &self.inner)
     }
 
     /// Delete the session, the state store and `meta.json`, logging (but not
