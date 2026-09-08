@@ -1,14 +1,16 @@
 use std::fs;
+use std::io::Cursor;
 use std::path::Path;
 
 use anyhow::anyhow;
+use image::{GenericImageView, ImageFormat};
 use matrix_sdk::RoomMemberships;
-use matrix_sdk::attachment::AttachmentConfig;
+use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseImageInfo, Thumbnail};
 use matrix_sdk::room::{Messages, MessagesOptions, Room};
 use matrix_sdk::ruma::events::room::message::{
     AddMentions, ForwardThread, RoomMessageEvent, RoomMessageEventContent,
 };
-use matrix_sdk::ruma::{EventId, RoomId};
+use matrix_sdk::ruma::{EventId, RoomId, UInt};
 
 /// Which flavour of `m.room.message` to send.
 #[derive(Debug, Clone, Copy)]
@@ -16,6 +18,51 @@ pub(crate) enum TextKind {
     Text,
     Notice,
     Emote,
+}
+
+/// Longest edge of a generated thumbnail, in pixels.
+const THUMBNAIL_SIZE: u32 = 800;
+
+/// Best-effort image dimensions plus a downscaled thumbnail, so clients can
+/// render an inline preview without downloading the full image first. Any
+/// decode failure falls back to a plain upload.
+fn image_attachment_config(data: &[u8]) -> AttachmentConfig {
+    let Ok(image) = image::load_from_memory(data) else {
+        return AttachmentConfig::new();
+    };
+    let (width, height) = image.dimensions();
+
+    let mut config = AttachmentConfig::new().info(AttachmentInfo::Image(BaseImageInfo {
+        width: UInt::new(width.into()),
+        height: UInt::new(height.into()),
+        size: UInt::new(data.len() as u64),
+        blurhash: None,
+        is_animated: None,
+    }));
+
+    if width > THUMBNAIL_SIZE || height > THUMBNAIL_SIZE {
+        let thumbnail = image.thumbnail(THUMBNAIL_SIZE, THUMBNAIL_SIZE);
+        let (tw, th) = thumbnail.dimensions();
+        // JPEG unless the image has an alpha channel, which JPEG cannot keep.
+        let (format, content_type) = if image.color().has_alpha() {
+            (ImageFormat::Png, mime::IMAGE_PNG)
+        } else {
+            (ImageFormat::Jpeg, mime::IMAGE_JPEG)
+        };
+        let mut buf = Cursor::new(Vec::new());
+        if thumbnail.write_to(&mut buf, format).is_ok() {
+            let bytes = buf.into_inner();
+            config = config.thumbnail(Some(Thumbnail {
+                size: UInt::new(bytes.len() as u64).unwrap_or_default(),
+                data: bytes,
+                content_type,
+                width: UInt::new(tw.into()).unwrap_or_default(),
+                height: UInt::new(th.into()).unwrap_or_default(),
+            }));
+        }
+    }
+
+    config
 }
 
 impl super::Client {
@@ -93,8 +140,14 @@ impl super::Client {
         let content_type = crate::mime::guess_mime(path)?;
         let data = fs::read(path)?;
 
+        let config = if content_type.type_() == mime::IMAGE {
+            image_attachment_config(&data)
+        } else {
+            AttachmentConfig::new()
+        };
+
         self.get_joined_room(room_id)?
-            .send_attachment(file_name, &content_type, data, AttachmentConfig::new())
+            .send_attachment(file_name, &content_type, data, config)
             .await?;
         Ok(())
     }

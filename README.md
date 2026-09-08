@@ -100,6 +100,9 @@ or send a file
 $ mn send -r "$ROOM_ID" --attachment "cat.jpg"
 ```
 
+Images are sent as `m.image` with their dimensions and, for anything larger
+than 800px, a generated thumbnail, so clients show an inline preview.
+
 ### Sync
 
 `--raw` prints the events as they come from the server.
