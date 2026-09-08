@@ -202,8 +202,14 @@ async fn main() -> anyhow::Result<()> {
         .full_state(args.full_state)
         .set_presence(args.presense);
 
+    // Logs go to stderr so they never corrupt the JSON on stdout. `RUST_LOG`
+    // wins if set, otherwise the verbosity flags decide the level.
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        tracing_subscriber::EnvFilter::new(args.verbose.tracing_level_filter().to_string())
+    });
     tracing_subscriber::fmt()
-        .with_max_level(args.verbose.tracing_level_filter())
+        .with_env_filter(env_filter)
+        .with_writer(std::io::stderr)
         .init();
 
     let client = create_client(&args.command).await?;
