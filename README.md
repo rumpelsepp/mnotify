@@ -103,6 +103,15 @@ or
 $ echo "Hello. :)" | mn send -r "$ROOM_ID"
 ```
 
+With `-m`/`--markdown` the body is rendered as Markdown (the message keeps a
+plain-text fallback for clients that don't render it):
+
+```
+$ mn send -r "$ROOM_ID" -m "**build failed** on \`main\`, see [log]($URL)"
+```
+
+`--markdown` also works with `-n`/`--notice` and `-e`/`--emote`.
+
 or send a file
 
 ```
