@@ -5,13 +5,15 @@ ATTENTION: Currently under development; expect breakage.
 `mnotify` is a simple cli for the [matrix](https://matrix.org) chat system.
 It was developed for the use case of sending notifications from a headless server.
 The binary is called `mn`.
-The output is always JSON.
+The output is always JSON (on stdout); logs go to stderr.
 
 ## Build
 
 ```
 $ cargo build [--release]
 ```
+
+Requires Rust 1.93 or newer (Rust edition 2024, matrix-sdk 0.18).
 
 ## Get Started
 
@@ -29,22 +31,56 @@ Without the `-p` flag, `mn` reads the password from stdin or interactively from 
 $ mn login @user:example.org
 ```
 
-The access token is stored in the system keyring.
-If you are on a remote machine without a keyring daemon, use the env variable `MN_NO_KEYRING`;
-in this case the sync token will be stored in a file `$XDG_STATE_HOME/mnotify/session.json`.
+The session (access/refresh token) and the passphrase of the encrypted state
+store are kept in the system keyring. On a remote machine without a keyring
+daemon set `MN_NO_KEYRING`; the secrets then live in a `0600` file
+`$XDG_STATE_HOME/mnotify/$USER_ID/session.json` instead.
 
-### SAS Verification
+### Login (QR code)
 
-Login into element (https://app.element.io), setup your account and leave it open.
-Perform a login (as described above).
-You should see the login in element.
-Element will complain that the new login needs to be verified; start the verification from element.
+Homeservers backed by a next-generation auth server (OAuth 2.0 / MAS, e.g.
+matrix.org) no longer accept password logins from new clients. Log in by
+scanning a QR code shown by an already signed-in device instead:
+
+```
+$ mn login @user:example.org --qr
+```
+
+`mn` asks for the base64 payload of the QR code. On a headless box, decode the
+QR image you took of the other device, e.g.:
+
+```
+$ grim -g "$(slurp)" - | zbarimg --oneshot -Sbinary PNG:- | base64 -w0
+```
+
+### Verify the device / recover history
+
+A fresh login is unverified and cannot read encrypted history. Either verify it
+from another device...
 
 ```
 $ mn verify
 ```
 
-Compare the emojis and confirm. Done.
+Start the verification from Element (or another client), compare the emojis and
+confirm.
+
+...or, if you have set up recovery before, restore the cross-signing and backup
+keys from your recovery key:
+
+```
+$ mn recovery recover < recovery-key.txt
+```
+
+The first device of an account has to enable recovery once, which bootstraps
+cross-signing and the server-side key backup and prints the recovery key:
+
+```
+$ mn recovery enable
+{"recovery_key":"EsT ..."}
+```
+
+`mn recovery status` reports the current recovery / backup / cross-signing state.
 
 ### Send a message
 
@@ -71,54 +107,52 @@ Without `--raw` only messages are printed.
 
 ```
 $ mn sync --raw
-{"rooms":{"leave":{},"join":{},"invite":{}},"presence":{},"account_data":[],"to_device_events":[],"device_lists":{},"device_one_time_keys_count":{"signed_curve25519":50},"notifications":{}}
-{"rooms":{"leave":{},"join":{},"invite":{}},"presence":{"events":[{"type":"m.presence","sender":"@rumpelsepp:hackbrettl.de","content":{"presence":"online","last_active_ago":45984,"currently_active":true}},{"type":"m.presence","sender":"@develop:hackbrettl.de","content":{"presence":"online","last_active_ago":83,"currently_active":true}}]},"account_data":[],"to_device_events":[],"device_lists":{},"device_one_time_keys_count":{"signed_curve25519":50},"notifications":{}}
 ```
 
-### Technical Stuff
+The sync token is persisted in the state store, so each invocation only fetches
+what changed since the last one.
 
-#### Build
+## Technical Stuff
 
-Since matrix provides a lot of features, a debug build can be quite large (see [#18](https://github.com/rumpelsepp/mnotify/issues/18)).
-In order to reduce the binary size, consider a `--release` build, or try [LTO](https://doc.rust-lang.org/cargo/reference/profiles.html#lto).
-You can also try out the feature `native-tls` which let `mn` use the system TLS library.
+### Build
 
-#### Environment Variables
+Since matrix provides a lot of features, a debug build can be quite large (see
+[#18](https://github.com/rumpelsepp/mnotify/issues/18)). For a smaller binary
+use a `--release` build, or try
+[LTO](https://doc.rust-lang.org/cargo/reference/profiles.html#lto). TLS is
+always [rustls](https://github.com/rustls/rustls); there is no system-TLS
+option anymore.
 
-##### `HTTPS_PROXY`
+### Environment Variables
 
-Use this proxy to proxy all matrix requests.
-Only http proxies are supported.
+#### `RUST_LOG`
 
-##### `MN_INSECURE`
+Standard [`tracing`](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html)
+filter, e.g. `RUST_LOG=matrix_sdk=debug`. Overrides `-v`/`-q`.
+
+#### `HTTPS_PROXY`
+
+Use this proxy for all matrix requests. Only http proxies are supported.
+
+#### `MN_INSECURE`
 
 Disable TLS verification.
 
-##### `MN_NO_KEYRING`
+#### `MN_NO_KEYRING`
 
-`mnotify` uses the system keyring using the [Secret Service API](https://specifications.freedesktop.org/secret-service/latest/).
-If that is not desired, this variable can be set to disable the usage of the system keyring.
-Instead a file `session.json` will be used for storing secrets.
-I hope, you know what you're doing, be warned!
+`mnotify` uses the system keyring via the
+[Secret Service API](https://specifications.freedesktop.org/secret-service/latest/).
+Set this to store the secrets in a `0600` file instead. Be warned.
 
-##### `MN_META_FILE`
+#### `MN_META_FILE`
 
 Overwrite the path to `meta.json` (see below).
 
-#### Files
+### Files
 
-`mnotify` conforms to the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html).
+`mnotify` conforms to the
+[XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html).
 
-##### `$XDG_STATE_HOME/mnotify/meta.json`
-
-Storing required meta information for the current session, such as the user.
-
-##### `$XDG_STATE_HOME/mnotify/$USER_ID/session.json`
-
-Used for storing secrets if `$MN_NO_KEYRING` is set.
-
-##### `$XDG_STATE_HOME/mnotify/$USER_ID/state.$EXT`
-
-The state store, for e.g. E2EE keys or similar.
-`$EXT` is the used database system; currently `sled` is used.
-However, the matrix-sdk authors are switching to `sqlite`, so this might change.
+- `$XDG_STATE_HOME/mnotify/meta.json` -- which user the current session belongs to.
+- `$XDG_STATE_HOME/mnotify/$USER_ID/session.json` -- session + store passphrase, only with `MN_NO_KEYRING`.
+- `$XDG_STATE_HOME/mnotify/$USER_ID/store/` -- the SQLite state/crypto store, encrypted with the store passphrase.
