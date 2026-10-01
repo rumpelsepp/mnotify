@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use anyhow::{Context, bail};
 use clap::{Args, Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
-use futures::StreamExt;
 use matrix_sdk::config::SyncSettings;
 use matrix_sdk::ruma::api::client::filter::FilterDefinition;
 use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
@@ -22,6 +21,7 @@ mod mime;
 mod outputs;
 mod terminal;
 
+use crate::client::sync::Scope;
 use crate::client::{Client, TextKind, session};
 
 const CRATE_NAME: &str = clap::crate_name!();
@@ -171,10 +171,6 @@ enum Command {
         /// Mark all received messages as read
         #[arg(long)]
         receipt: bool,
-
-        /// Print raw sync events as they come
-        #[arg(long)]
-        raw: bool,
     },
     /// Send typing notifications
     Typing {
@@ -218,12 +214,34 @@ enum RecoveryAction {
     Disable,
 }
 
+/// What a command needs synced before it runs.
+enum SyncNeed<'a> {
+    Nothing,
+    Account,
+    Room(&'a OwnedRoomOrAliasId),
+    AllRooms,
+}
+
 impl Command {
-    fn can_sync(&self) -> bool {
-        !matches!(
-            self,
-            Command::Clean { .. } | Command::Login { .. } | Command::Sync { .. }
-        )
+    fn sync_need(&self) -> SyncNeed<'_> {
+        match self {
+            // `sync` runs its own loop; `login` and `clean` have no session yet.
+            Command::Clean { .. } | Command::Login { .. } | Command::Sync { .. } => {
+                SyncNeed::Nothing
+            }
+            Command::Messages { room, .. }
+            | Command::Redact { room, .. }
+            | Command::Send { room, .. }
+            | Command::Typing { room, .. } => SyncNeed::Room(&room.room),
+            Command::Rooms { room: Some(room) } => SyncNeed::Room(room),
+            Command::Rooms { room: None } => SyncNeed::AllRooms,
+            Command::Homeserver { .. }
+            | Command::Join { .. }
+            | Command::Logout
+            | Command::Verify { .. }
+            | Command::Recovery { .. }
+            | Command::Whoami => SyncNeed::Account,
+        }
     }
 }
 
@@ -300,11 +318,39 @@ async fn main() -> anyhow::Result<()> {
 
     let client = create_client(&args.command).await?;
 
-    if args.command.can_sync() {
-        client.sync_once(sync_settings.clone()).await?;
+    let result = run(args.command, &client, sync_settings).await;
+
+    // Let background E2EE setup finish (also after an error): exiting while it
+    // runs makes the SDK log spurious errors or even panic on shutdown.
+    client
+        .encryption()
+        .wait_for_e2ee_initialization_tasks()
+        .await;
+    result
+}
+
+async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> anyhow::Result<()> {
+    match command.sync_need() {
+        SyncNeed::Nothing => {}
+        SyncNeed::Account => {
+            client
+                .catch_up(Scope::Account, sync_settings.clone())
+                .await?
+        }
+        SyncNeed::AllRooms => {
+            client
+                .catch_up(Scope::AllRooms, sync_settings.clone())
+                .await?
+        }
+        SyncNeed::Room(room) => {
+            let room_id = client.resolve_room_id(room).await?;
+            client
+                .catch_up(Scope::Room(&room_id), sync_settings.clone())
+                .await?
+        }
     }
 
-    match args.command {
+    match command {
         Command::Clean { .. } => unreachable!("handled before the client is built"),
         Command::Homeserver {
             force,
@@ -374,13 +420,6 @@ async fn main() -> anyhow::Result<()> {
                 client.user_id(),
             );
 
-            // Let the SDK finish setting up backups/recovery for the new
-            // device; exiting mid-way logs spurious errors.
-            client
-                .encryption()
-                .wait_for_e2ee_initialization_tasks()
-                .await;
-
             if let Some(path) = session::secrets_file(&user_id)? {
                 eprintln!(
                     "warning: no system keyring in use; the access token and the store \
@@ -394,6 +433,7 @@ async fn main() -> anyhow::Result<()> {
                 user_id,
                 device_name: Some(device_name),
                 homeserver: Some(client.homeserver().to_string()),
+                sliding_sync: client.detect_sliding_sync().await,
             }
             .dump()?;
         }
@@ -449,12 +489,14 @@ async fn main() -> anyhow::Result<()> {
             Some(device_id) => {
                 tokio::select! {
                     r = client.verify_device(&device_id) => r?,
-                    r = client.sync(sync_settings.clone()) => r?,
+                    r = client.sync_forever(Scope::Account, sync_settings.clone()) => r?,
                 }
             }
             None => {
                 client.set_sas_handlers().await?;
-                client.sync(sync_settings.clone()).await?;
+                client
+                    .sync_forever(Scope::Account, sync_settings.clone())
+                    .await?;
             }
         },
         Command::Recovery { action } => match action {
@@ -525,30 +567,29 @@ async fn main() -> anyhow::Result<()> {
                 serde_json::json!({ "room_id": room.room_id(), "event_id": event_id })
             );
         }
-        Command::Sync { room, receipt, raw } => {
-            if raw {
-                let mut sync_stream = Box::pin(client.sync_stream(sync_settings.clone()).await);
-                while let Some(response) = sync_stream.next().await {
-                    let resp: outputs::SyncResponse = response?.into();
-                    println!("{}", serde_json::to_string(&resp)?);
+        Command::Sync { room, receipt } => {
+            let room_id = match &room {
+                Some(room) => Some(client.resolve_room_id(room).await?),
+                None => None,
+            };
+            match &room_id {
+                Some(room_id) => {
+                    client.add_room_event_handler(room_id, move |event, room| async move {
+                        on_room_message(event, room, receipt).await
+                    });
                 }
-            } else {
-                match &room {
-                    Some(room) => {
-                        let room_id = client.resolve_room_id(room).await?;
-                        client.add_room_event_handler(&room_id, move |event, room| async move {
-                            on_room_message(event, room, receipt).await
-                        });
-                    }
-                    None => {
-                        client.add_event_handler(move |event, room| async move {
-                            on_room_message(event, room, receipt).await
-                        });
-                    }
+                None => {
+                    client.add_event_handler(move |event, room| async move {
+                        on_room_message(event, room, receipt).await
+                    });
                 }
-
-                client.sync(sync_settings.clone()).await?;
             }
+
+            let scope = match &room_id {
+                Some(room_id) => Scope::Room(room_id),
+                None => Scope::AllRooms,
+            };
+            client.sync_forever(scope, sync_settings.clone()).await?;
         }
         Command::Typing { room, disable } => {
             let room = client.joined_room(&room.room).await?;
