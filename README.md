@@ -194,6 +194,12 @@ the same in its "exclude insecure devices" mode. A device that is not
 cross-signed therefore cannot take part in encrypted rooms, and `mn` refuses to
 send there from one.
 
+Messages sent before a device logged in are decrypted with room keys from the
+server-side key backup, once recovery is set up on the device. As in Element,
+the backup cannot prove which device a key came from, so the sender of these
+messages is not authenticated; `messages` and `sync` mark them `[unverified]`
+(Element shows a grey shield).
+
 **New account** (e.g. a dedicated bot account): `mn login` creates the
 cross-signing keys and signs its device itself. Then store them in secret
 storage once, so that later logins can be signed as well, and keep the printed

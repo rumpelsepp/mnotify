@@ -2,6 +2,7 @@
 //! scripts rely on with `--json`.
 
 use comfy_table::{ContentArrangement, Table, presets};
+use matrix_sdk::deserialized_responses::{EncryptionInfo, VerificationLevel, VerificationState};
 use matrix_sdk::sync::UnreadNotificationsCount;
 use serde::Serialize;
 use serde::ser::SerializeMap;
@@ -188,21 +189,50 @@ impl Output for Rooms {
     }
 }
 
+/// Whether an encrypted event's sender is not proven: its room key has no
+/// known sending device, as for keys from the key backup. Element shows a
+/// grey shield ("authenticity cannot be guaranteed") for these.
+pub(crate) fn sender_unproven(info: Option<&EncryptionInfo>) -> bool {
+    info.is_some_and(|info| {
+        !matches!(
+            info.verification_state,
+            VerificationState::Verified
+                | VerificationState::Unverified(VerificationLevel::UnverifiedIdentity)
+        )
+    })
+}
+
+/// A timeline event as printed: the raw event (also its JSON form), plus
+/// whether its sender is unproven (see `sender_unproven`).
+pub(crate) struct Event {
+    pub(crate) raw: Box<RawValue>,
+    pub(crate) unproven: bool,
+}
+
 /// Timeline events of `mn messages`, oldest first.
-#[derive(Serialize)]
-#[serde(transparent)]
-pub(crate) struct Events(pub(crate) Vec<Box<RawValue>>);
+pub(crate) struct Events(pub(crate) Vec<Event>);
+
+impl Serialize for Events {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().map(|event| &event.raw))
+    }
+}
 
 impl Output for Events {
     fn human(&self) -> String {
-        let lines: Vec<String> = self.0.iter().map(|event| event_line(event)).collect();
+        let lines: Vec<String> = self
+            .0
+            .iter()
+            .map(|event| event_line(&event.raw, event.unproven))
+            .collect();
         lines.join("\n")
     }
 }
 
-/// One timeline event as a line: local time, sender, and what happened.
-/// Shared by `mn messages` and `mn sync`.
-pub(crate) fn event_line(event: &RawValue) -> String {
+/// One timeline event as a line: local time, sender, and what happened;
+/// `[unverified]` if the sender is unproven. Shared by `mn messages` and
+/// `mn sync`.
+pub(crate) fn event_line(event: &RawValue, unproven: bool) -> String {
     let Ok(event) = serde_json::from_str::<Value>(event.get()) else {
         return "[unreadable event]".to_owned();
     };
@@ -240,8 +270,9 @@ pub(crate) fn event_line(event: &RawValue) -> String {
     } else {
         ""
     };
+    let unverified = if unproven { "[unverified] " } else { "" };
 
-    let prefix = format!("{time}  {sender}  {thread}");
+    let prefix = format!("{time}  {sender}  {thread}{unverified}");
     // Continuation lines of multi-line messages line up under the first one.
     let indent = " ".repeat(prefix.chars().count());
     format!("{prefix}{}", text.replace('\n', &format!("\n{indent}")))
@@ -253,7 +284,7 @@ mod tests {
 
     fn line(event: serde_json::Value) -> String {
         let raw = RawValue::from_string(event.to_string()).unwrap();
-        event_line(&raw)
+        event_line(&raw, false)
     }
 
     fn message(content: serde_json::Value) -> serde_json::Value {
@@ -292,6 +323,13 @@ mod tests {
         let mut encrypted = message(serde_json::json!({}));
         encrypted["type"] = "m.room.encrypted".into();
         assert!(line(encrypted).ends_with("[unable to decrypt]"));
+
+        let raw = RawValue::from_string(
+            message(serde_json::json!({"msgtype": "m.text", "body": "old"})).to_string(),
+        )
+        .unwrap();
+        let unverified = event_line(&raw, true);
+        assert!(unverified.ends_with("  [unverified] old"), "{unverified}");
 
         let multi = line(message(
             serde_json::json!({"msgtype": "m.text", "body": "a\nb"}),

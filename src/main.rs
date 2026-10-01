@@ -5,6 +5,7 @@ use anyhow::{Context, bail};
 use clap::{Args, Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
 use matrix_sdk::config::SyncSettings;
+use matrix_sdk::deserialized_responses::EncryptionInfo;
 use matrix_sdk::ruma::api::client::filter::FilterDefinition;
 use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
 use matrix_sdk::ruma::events::receipt::ReceiptThread;
@@ -259,6 +260,7 @@ impl Command {
 async fn on_room_message(
     event: Raw<AnySyncTimelineEvent>,
     room: Room,
+    encryption_info: Option<EncryptionInfo>,
     receipt: bool,
     json: bool,
 ) -> anyhow::Result<()> {
@@ -274,7 +276,8 @@ async fn on_room_message(
     if json {
         println!("{}", event.json());
     } else {
-        println!("{}", output::event_line(event.json()));
+        let unproven = output::sender_unproven(encryption_info.as_ref());
+        println!("{}", output::event_line(event.json(), unproven));
     }
     Ok(())
 }
@@ -481,7 +484,10 @@ async fn run(
                 Some(root) => client.thread(&room, &root, limit).await?,
                 None => client.messages(&room, limit).await?,
             };
-            let events = events.into_iter().map(|e| e.into_raw().into_json());
+            let events = events.into_iter().map(|e| output::Event {
+                unproven: output::sender_unproven(e.encryption_info().map(|i| &**i)),
+                raw: e.into_raw().into_json(),
+            });
             output::print(json, &Events(events.collect()))?;
         }
         Command::Rooms { room } => match room {
@@ -616,13 +622,13 @@ async fn run(
             };
             match &room_id {
                 Some(room_id) => {
-                    client.add_room_event_handler(room_id, move |event, room| async move {
-                        on_room_message(event, room, receipt, json).await
+                    client.add_room_event_handler(room_id, move |event, room, info| async move {
+                        on_room_message(event, room, info, receipt, json).await
                     });
                 }
                 None => {
-                    client.add_event_handler(move |event, room| async move {
-                        on_room_message(event, room, receipt, json).await
+                    client.add_event_handler(move |event, room, info| async move {
+                        on_room_message(event, room, info, receipt, json).await
                     });
                 }
             }
