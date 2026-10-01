@@ -135,3 +135,24 @@ fn clean_works_offline() {
         .assert()
         .success();
 }
+
+#[test]
+fn falls_back_to_a_private_file_without_keyring() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = temp_dir("keyring-fallback");
+    // No MN_NO_KEYRING, and an unreachable session bus so that a real
+    // keyring on the test machine is never touched.
+    isolated(&dir)
+        .env_remove("MN_NO_KEYRING")
+        .env("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent/bus")
+        .args(["login", "@bot:mn-test.invalid"])
+        .write_stdin("hunter2\n")
+        .timeout(std::time::Duration::from_secs(60))
+        .assert()
+        .failure(); // the homeserver does not exist, but the secrets file is set up first
+
+    let session = dir.join("mnotify/@bot:mn-test.invalid/session.json");
+    let mode = std::fs::metadata(&session).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o600);
+}
