@@ -295,6 +295,12 @@ pub(crate) struct Meta {
     /// Homeserver URL found at login, so later runs skip the discovery.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) homeserver: Option<String>,
+    /// Whether this login syncs via sliding sync. Fixed at login: both APIs
+    /// keep their to-device token in the same place in the crypto store, and
+    /// a token of the one is rejected by the other. Logins from before this
+    /// field existed use `/v3/sync`.
+    #[serde(default)]
+    pub(crate) sliding_sync: bool,
 }
 
 impl Meta {
@@ -324,5 +330,6 @@ mod tests {
             serde_json::from_str(r#"{"user_id":"@bot:example.org","device_name":null}"#).unwrap();
         assert_eq!(meta.user_id, "@bot:example.org");
         assert!(meta.homeserver.is_none());
+        assert!(!meta.sliding_sync, "old logins must stay on /v3/sync");
     }
 }

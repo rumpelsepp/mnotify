@@ -28,7 +28,7 @@ management beyond joining. What it does support, using the categories of the
 | Spaces | ✗ | Spaces are flagged in `mn rooms`, nothing more |
 | Multiple accounts | ✗ | One account per `meta.json`; switch with `MN_META_FILE` |
 | Invisible crypto (MSC4153) | ✗ | Messages are still encrypted for unverified devices |
-| Sliding sync | ✗ | Uses the classic `/sync`, with lazy-loaded members and a persisted sync token |
+| Sliding sync | ✅ supported | Simplified sliding sync (MSC4186) where the homeserver offers it, `/v3/sync` otherwise |
 | Voice / video calls | ✗ | Out of scope |
 | Custom emoji / image packs | ✗ | Out of scope |
 | Multiple UI languages | ✗ | English only |
@@ -197,7 +197,7 @@ $ mn recovery enable
 | `mn join <room>` | Join a room or accept an invite |
 | `mn send` | Send text, Markdown, notices, emotes, replies or files; prints the event ID |
 | `mn messages -r <room>` | Print the latest messages of a room as a JSON array |
-| `mn sync` | Print incoming timeline events as JSON lines, forever (`--raw` for the whole sync response) |
+| `mn sync` | Print incoming timeline events as JSON lines, forever |
 | `mn rooms` | Room details: name, members, encryption, ... |
 | `mn redact` | Delete an event |
 | `mn typing` | Show / hide the typing indicator |
@@ -212,9 +212,6 @@ With `-m`/`--markdown` the body is rendered as Markdown (the message keeps a
 plain-text fallback for clients that don't render it). Images sent with
 `--attachment` get their dimensions and, above 800px, a thumbnail, so clients
 show an inline preview.
-
-The sync token is persisted in the state store, so each invocation only fetches
-what changed since the last one.
 
 ## Technical Stuff
 
@@ -259,6 +256,11 @@ session, or start over with `mn clean` and log in again.
 
 Standard proxy variables, honoured for all Matrix requests (`socks5://`
 proxies included).
+
+#### `MN_SLIDING_SYNC`
+
+Set to `0` during `mn login` to make that login use `/v3/sync` even where the
+homeserver offers sliding sync. The choice holds until `mn logout`.
 
 #### `MN_INSECURE`
 

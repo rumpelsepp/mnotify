@@ -13,6 +13,7 @@ pub mod recovery;
 pub mod room;
 pub mod sas;
 pub mod session;
+pub mod sync;
 
 pub(crate) use room::TextKind;
 
@@ -20,6 +21,8 @@ pub(crate) struct Client {
     inner: MatrixClient,
     user_id: OwnedUserId,
     device_name: String,
+    /// Sync via sliding sync instead of `/v3/sync`, see `Meta::sliding_sync`.
+    pub(crate) sliding_sync: bool,
 }
 
 impl Client {
@@ -60,6 +63,7 @@ impl Client {
             inner: builder.build().await?,
             user_id,
             device_name,
+            sliding_sync: false,
         };
 
         // Persist a rotated access/refresh token synchronously whenever
@@ -98,7 +102,9 @@ impl Client {
         }
         let meta = session::Meta::load().context("could not load meta.json")?;
         let device_name = meta.device_name.unwrap_or_else(|| CRATE_NAME.to_string());
-        Self::new(meta.user_id, device_name, meta.homeserver.as_deref()).await
+        let mut client = Self::new(meta.user_id, device_name, meta.homeserver.as_deref()).await?;
+        client.sliding_sync = meta.sliding_sync;
+        Ok(client)
     }
 
     pub(crate) fn logged_in(&self) -> bool {

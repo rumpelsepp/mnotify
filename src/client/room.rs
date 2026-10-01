@@ -181,6 +181,8 @@ impl super::Client {
             });
         }
 
+        members.sort_by(|a, b| a.user_id.cmp(&b.user_id));
+
         Ok(crate::outputs::Room {
             name: room.name(),
             topic: room.topic(),
