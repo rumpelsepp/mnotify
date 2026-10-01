@@ -20,7 +20,7 @@ image = { version = "0.25.10", default-features = false, features = ["gif", "jpe
 keyring = "4.2.0"
 mime = "0.3.17"
 qrcode = { version = "0.14.1", default-features = false }
-rand = "0.9.0"
+rand = "0.10.3"
 cli-prompts = "0.1.1"
 rpassword = "7.2.0"
 serde = { version = "1.0.152", features = ["derive"] }
@@ -37,7 +37,7 @@ tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 xdg = "3.0.0"
 
 [dependencies.matrix-sdk]
-version = "0.18.0"
+version = "0.19.1"
 features = ["anyhow", "markdown", "socks", "bundled-sqlite", "qrcode"]
 
 [dev-dependencies]

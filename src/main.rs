@@ -291,8 +291,7 @@ async fn main() -> anyhow::Result<()> {
     // invocations only fetch the delta.
     let sync_settings = SyncSettings::default()
         .filter(FilterDefinition::with_lazy_loading().into())
-        .full_state(args.full_state)
-        .set_presence(args.presence);
+        .full_state(args.full_state);
 
     // Logs go to stderr so they never corrupt the JSON on stdout. `RUST_LOG`
     // wins if set, otherwise the verbosity flags decide the level.
@@ -317,6 +316,8 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let client = create_client(&args.command).await?;
+    // The default for every sync request, /v3/sync and sliding sync alike.
+    client.set_presence(args.presence, None, false).await?;
 
     let result = run(args.command, &client, sync_settings).await;
 
