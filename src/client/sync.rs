@@ -61,7 +61,12 @@ fn required_state() -> Vec<(StateEventType, String)> {
     ]
     .into_iter()
     .map(|t| (t, String::new()))
-    .chain([(StateEventType::RoomMember, "$ME".to_owned())])
+    // `$LAZY`: the members who sent the delivered timeline events, so that
+    // their devices are tracked and their cross-signing can be checked.
+    .chain([
+        (StateEventType::RoomMember, "$ME".to_owned()),
+        (StateEventType::RoomMember, "$LAZY".to_owned()),
+    ])
     .collect()
 }
 
@@ -123,7 +128,11 @@ impl super::Client {
         settings: SyncSettings,
     ) -> anyhow::Result<()> {
         if !self.sliding_sync {
-            self.inner.sync_once(settings).await?;
+            self.inner.sync_once(settings.clone()).await?;
+            if self.track_members(scope).await? {
+                // A sync round sends the key queries this calls for.
+                self.inner.sync_once(settings).await?;
+            }
             return Ok(());
         }
 
@@ -142,13 +151,41 @@ impl super::Client {
 
         let stream = sliding_sync.sync();
         futures::pin_mut!(stream);
+        let mut done = false;
         while let Some(summary) = stream.next().await {
             summary?;
-            if !matches!(scope, Scope::AllRooms) || all_rooms_loaded(&sliding_sync).await {
+            // The SDK sends the E2EE requests a response calls for (key
+            // queries for changed devices, one-time key uploads) alongside
+            // the *next* request. So once we have what we need, send one
+            // more (it returns at once) to get them out before the command
+            // runs; otherwise it works with stale device lists.
+            if done {
                 break;
+            }
+            done = !matches!(scope, Scope::AllRooms) || all_rooms_loaded(&sliding_sync).await;
+            if done {
+                self.track_members(scope).await?;
             }
         }
         Ok(())
+    }
+
+    /// In an encrypted room, load all members, which makes the SDK track
+    /// their devices. Without that, messages from members we have not seen
+    /// yet fail the MSC4153 check, as their cross-signing is unknown.
+    /// Returns whether key queries are now pending.
+    async fn track_members(&self, scope: Scope<'_>) -> anyhow::Result<bool> {
+        let Scope::Room(room_id) = scope else {
+            return Ok(false);
+        };
+        let Some(room) = self.inner.get_room(room_id) else {
+            return Ok(false);
+        };
+        if !room.latest_encryption_state().await?.is_encrypted() {
+            return Ok(false);
+        }
+        room.sync_members().await?;
+        Ok(true)
     }
 
     /// Sync until an error occurs, for `mn sync` and `mn verify`. Event
