@@ -8,6 +8,7 @@ use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseImageInfo, Th
 use matrix_sdk::deserialized_responses::TimelineEvent;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk::room::{IncludeRelations, MessagesOptions, RelationsOptions, Room};
+use matrix_sdk::ruma::events::Mentions;
 use matrix_sdk::ruma::events::relation::RelationType;
 use matrix_sdk::ruma::events::room::message::{
     AddMentions, ReplyWithinThread, RoomMessageEventContentWithoutRelation,
@@ -110,7 +111,7 @@ impl super::Client {
         body: &str,
         kind: TextKind,
         markdown: bool,
-        relation: Option<Relation>,
+        addressing: Addressing,
     ) -> anyhow::Result<OwnedEventId> {
         type Content = RoomMessageEventContentWithoutRelation;
         let content = match (kind, markdown) {
@@ -121,7 +122,8 @@ impl super::Client {
             (TextKind::Emote, false) => Content::emote_plain(body),
             (TextKind::Emote, true) => Content::emote_markdown(body),
         };
-        let content = match relation {
+        let content = content.add_mentions(addressing.mentions);
+        let content = match addressing.relation {
             // Boxed: the SDK future is deep enough to hit rustc's query depth
             // limit when inlined into this one.
             Some(relation) => Box::pin(room.make_reply_event(content, relation.into())).await?,
@@ -134,7 +136,7 @@ impl super::Client {
         &self,
         room: &Room,
         path: impl AsRef<Path>,
-        relation: Option<Relation>,
+        addressing: Addressing,
     ) -> anyhow::Result<OwnedEventId> {
         let path = path.as_ref();
         let file_name = path
@@ -149,7 +151,8 @@ impl super::Client {
         } else {
             AttachmentConfig::new()
         };
-        config.reply = relation.map(Into::into);
+        config.reply = addressing.relation.map(Into::into);
+        config.mentions = Some(addressing.mentions);
 
         Ok(room
             .send_attachment(file_name, &content_type, data, config)
@@ -190,6 +193,22 @@ impl super::Client {
         })
     }
 
+    /// `@room` only notifies if our power level allows it; fail instead of
+    /// sending a message that silently notifies no one.
+    pub(crate) async fn ensure_can_mention_room(&self, room: &Room) -> anyhow::Result<()> {
+        let me = room
+            .get_member(&self.user_id)
+            .await?
+            .context("not a member of the room")?;
+        anyhow::ensure!(
+            me.can_trigger_room_notification(),
+            "{} may not notify the whole room (@room) in {}; raise its power level",
+            self.user_id,
+            room.room_id(),
+        );
+        Ok(())
+    }
+
     /// The latest `limit` events of the room, oldest first.
     pub(crate) async fn messages(
         &self,
@@ -220,6 +239,17 @@ impl super::Client {
         events.reverse();
         Ok(events)
     }
+}
+
+/// Where a new message goes and whom it notifies.
+///
+/// `mentions` is always sent, empty if nobody is mentioned: that opts the
+/// message out of the legacy push rules that match names in the body, so a
+/// log line containing someone's name does not notify them.
+#[derive(Default)]
+pub(crate) struct Addressing {
+    pub(crate) relation: Option<Relation>,
+    pub(crate) mentions: Mentions,
 }
 
 /// How a new message relates to an existing one.

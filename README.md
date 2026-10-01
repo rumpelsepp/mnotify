@@ -34,7 +34,8 @@ management beyond joining. What it does support, using the categories of the
 | Multiple UI languages | ✗ | English only |
 
 On top of that, the parts that matter for automation: JSON on stdout, room
-aliases everywhere, Markdown, notices, emotes, replies, file and image
+aliases everywhere, Markdown, notices, emotes, replies, mentions that ping
+people's phones, file and image
 attachments with thumbnails, redactions, reading via `messages` and `sync`,
 safe concurrent invocations, and secrets in the system keyring or a `0600` file.
 
@@ -84,6 +85,22 @@ Set `MN_ROOM` once instead of repeating `-r`:
 $ export MN_ROOM='#ops:example.org'
 $ uptime | mn send
 ```
+
+### Recipe: wake someone up
+
+Messages notify according to each reader's settings; a mention makes it a
+ping (highlight and sound under the default push rules). Mention people explicitly, or
+the whole room with `--mention-room`, which needs the power level for `@room`
+notifications (50 by default):
+
+```
+$ mn send --mention @alice:example.org "backup failed on nas"
+$ mn send --mention-room -n "maintenance in 10 minutes"
+```
+
+Names in the text never ping anyone: `mn` always declares its mentions
+(`m.mentions`, Matrix 1.7), so a log line that happens to contain someone's
+name stays quiet.
 
 ### Recipe: one thread per job
 

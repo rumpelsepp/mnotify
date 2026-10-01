@@ -17,7 +17,7 @@ pub mod sas;
 pub mod session;
 pub mod sync;
 
-pub(crate) use room::{Relation, TextKind};
+pub(crate) use room::{Addressing, Relation, TextKind};
 
 pub(crate) struct Client {
     inner: MatrixClient,

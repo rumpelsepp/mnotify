@@ -169,3 +169,11 @@ fn messages_can_read_a_thread() {
         .success()
         .stdout(predicate::str::contains("--thread"));
 }
+
+#[test]
+fn mentions_need_full_user_ids() {
+    mn().args(["send", "-r", "#ops:example.org", "--mention", "alice", "hi"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--mention"));
+}
