@@ -51,15 +51,17 @@ impl Client {
         .handle_refresh_tokens()
         // Invisible crypto (MSC4153): create cross-signing keys for accounts
         // that have none, share room keys only with cross-signed devices and
-        // ignore messages from devices that are not cross-signed, including
-        // sessions from before trust was recorded.
+        // ignore messages from devices that are not cross-signed. Like
+        // Element's "exclude insecure devices", keys without a known sending
+        // device are accepted: those from the key backup, which this device
+        // needs to read messages from before its login.
         .with_encryption_settings(EncryptionSettings {
             auto_enable_cross_signing: true,
             ..Default::default()
         })
         .with_room_key_recipient_strategy(CollectStrategy::IdentityBasedStrategy)
         .with_decryption_settings(DecryptionSettings {
-            sender_device_trust_requirement: TrustRequirement::CrossSigned,
+            sender_device_trust_requirement: TrustRequirement::CrossSignedOrLegacy,
         })
         .cross_process_store_config(CrossProcessLockConfig::multi_process(&lock_holder))
         .sqlite_store(

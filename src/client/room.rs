@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs;
 use std::io::Cursor;
 use std::path::Path;
@@ -5,7 +6,7 @@ use std::path::Path;
 use anyhow::{Context, anyhow, bail};
 use image::{GenericImageView, ImageFormat};
 use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseImageInfo, Thumbnail};
-use matrix_sdk::deserialized_responses::TimelineEvent;
+use matrix_sdk::deserialized_responses::{TimelineEvent, TimelineEventKind, UnableToDecryptReason};
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk::room::{IncludeRelations, MessagesOptions, RelationsOptions, Room};
 use matrix_sdk::ruma::events::Mentions;
@@ -15,6 +16,7 @@ use matrix_sdk::ruma::events::room::message::{
 };
 use matrix_sdk::ruma::{EventId, OwnedEventId, OwnedRoomId, RoomId, RoomOrAliasId, UInt};
 use matrix_sdk::{RoomMemberships, RoomState};
+use tracing::warn;
 
 /// Which flavour of `m.room.message` to send.
 #[derive(Debug, Clone, Copy)]
@@ -218,6 +220,7 @@ impl super::Client {
         let mut options = MessagesOptions::backward();
         options.limit = limit.try_into()?;
         let mut events = room.messages(options).await?.chunk;
+        self.decrypt_from_backup(room, &mut events).await;
         events.reverse();
         Ok(events)
     }
@@ -236,8 +239,51 @@ impl super::Client {
         options.limit = Some(limit.try_into()?);
         let mut events = room.relations(root.to_owned(), options).await?.chunk;
         events.push(room.event(root, None).await?);
+        self.decrypt_from_backup(room, &mut events).await;
         events.reverse();
         Ok(events)
+    }
+
+    /// Decrypt events this device never received the room key for (e.g. sent
+    /// before it logged in) with keys from the server-side key backup. The SDK
+    /// does not fetch them on its own (`BackupDownloadStrategy::Manual`), and
+    /// its background download on failure would come too late for a one-shot
+    /// command. Without an enabled backup, the events stay undecryptable.
+    async fn decrypt_from_backup(&self, room: &Room, events: &mut [TimelineEvent]) {
+        let backups = self.inner.encryption().backups();
+        let mut downloaded = HashSet::new();
+        for event in events {
+            let TimelineEventKind::UnableToDecrypt {
+                event: raw,
+                utd_info,
+            } = &event.kind
+            else {
+                continue;
+            };
+            let (
+                UnableToDecryptReason::MissingMegolmSession { .. }
+                | UnableToDecryptReason::UnknownMegolmMessageIndex,
+                Some(session_id),
+            ) = (&utd_info.reason, &utd_info.session_id)
+            else {
+                continue;
+            };
+            if !downloaded.contains(session_id) {
+                match backups.download_room_key(room.room_id(), session_id).await {
+                    Ok(true) => {}
+                    Ok(false) => return, // no backup enabled on this device
+                    Err(e) => {
+                        warn!("cannot download room key {session_id} from the backup: {e}");
+                        continue;
+                    }
+                }
+                downloaded.insert(session_id.clone());
+            }
+            match room.decrypt_event(raw.cast_ref_unchecked(), None).await {
+                Ok(decrypted) => *event = decrypted,
+                Err(e) => warn!("cannot decrypt event: {e}"),
+            }
+        }
     }
 }
 
