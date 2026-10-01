@@ -137,7 +137,7 @@ impl super::Client {
         }
         let sliding_sync = builder.build().await?;
         if let Scope::Room(room_id) = scope {
-            sliding_sync.subscribe_to_rooms(&[room_id], Some(room_subscription(0)), false);
+            sliding_sync.add_room_subscriptions(&[room_id], Some(room_subscription(0)), false);
         }
 
         let stream = sliding_sync.sync();
@@ -171,7 +171,7 @@ impl super::Client {
         }
         let sliding_sync = builder.build().await?;
         if let Scope::Room(room_id) = scope {
-            sliding_sync.subscribe_to_rooms(
+            sliding_sync.add_room_subscriptions(
                 &[room_id],
                 Some(room_subscription(LIVE_TIMELINE_LIMIT)),
                 false,
