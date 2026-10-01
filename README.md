@@ -5,12 +5,13 @@ built for one job: **getting messages from scripts, cron jobs and headless
 servers into a Matrix room**, end-to-end encrypted rooms included. It can read
 too, so simple bots are a shell loop away.
 
-The binary is called `mn`. Its output on stdout is always JSON, logs go to
-stderr, and failures exit non-zero, so it composes with `jq` and `set -e`.
+The binary is called `mn`. It prints tables and plain text for people and,
+with `--json`, JSON for scripts; logs go to stderr and failures exit non-zero,
+so it composes with `jq` and `set -e`.
 
 ```
 $ backup.sh || echo "Backup on $(hostname) failed" | mn send -r '#ops:example.org'
-{"event_id":"$Kx0…","room_id":"!abc…:example.org"}
+$Kx0…
 ```
 
 ## Features
@@ -34,7 +35,7 @@ management beyond joining. What it does support, using the categories of the
 | Multiple UI languages | ✗ | English only |
 
 On top of that, the parts that matter for automation: JSON on stdout, room
-aliases everywhere, Markdown, notices, emotes, replies, mentions that ping
+aliases everywhere, `--json` output, Markdown, notices, emotes, replies, mentions that ping
 people's phones, file and image
 attachments with thumbnails, redactions, reading via `messages` and `sync`,
 safe concurrent invocations, and secrets in the system keyring or a `0600` file.
@@ -65,7 +66,7 @@ server. Aliases and room IDs both work everywhere:
 
 ```
 $ mn join '#ops:example.org'
-{"room_id":"!abc…:example.org"}
+!abc…:example.org
 ```
 
 **4. Send.** Text as argument or on stdin, optionally as Markdown, optionally
@@ -108,7 +109,7 @@ name stays quiet.
 the details, so the room itself only shows one line per job:
 
 ```
-$ id=$(mn send "Deploy of v1.4 started" | jq -r .event_id)
+$ id=$(mn send "Deploy of v1.4 started")
 $ ./deploy.sh > deploy.log 2>&1; mn send --thread "$id" -a deploy.log
 $ mn send --thread "$id" -n "Deploy finished ✅"
 $ mn messages --thread "$id"
@@ -119,10 +120,11 @@ single message instead.
 
 ### Recipe: a tiny command bot
 
-`mn sync` runs forever and prints one JSON object per incoming event:
+`mn sync` runs forever and prints each incoming event; with `--json`, one
+JSON object per line:
 
 ```sh
-mn sync -r '#ops:example.org' |
+mn sync -r '#ops:example.org' --json |
   jq --unbuffered -r 'select(.type == "m.room.message" and .sender != "@backupbot:example.org")
                       | .content.body' |
   while read -r body; do
@@ -199,7 +201,7 @@ recovery key:
 
 ```
 $ mn recovery enable
-{"recovery_key":"EsT ..."}
+EsT ...
 ```
 
 **Account that already has cross-signing** (e.g. set up in Element): `mn login`
@@ -222,8 +224,8 @@ verification there, compare the emojis and confirm. `mn verify --device
 | `mn login` / `mn logout` | Create / end the session |
 | `mn join <room>` | Join a room or accept an invite |
 | `mn send` | Send text, Markdown, notices, emotes, replies or files; prints the event ID |
-| `mn messages -r <room>` | Print the latest messages of a room as a JSON array |
-| `mn sync` | Print incoming timeline events as JSON lines, forever |
+| `mn messages -r <room>` | Print the latest messages of a room (`--json`: an array of raw events) |
+| `mn sync` | Print incoming timeline events, forever (`--json`: one raw event per line) |
 | `mn rooms` | Room details: name, members, encryption, ... |
 | `mn redact` | Delete an event |
 | `mn typing` | Show / hide the typing indicator |
@@ -231,7 +233,9 @@ verification there, compare the emojis and confirm. `mn verify --device
 | `mn whoami`, `mn homeserver` | Account and server info |
 | `mn clean <user>` | Delete local state without contacting the server |
 
-`mn <command> --help` documents every option. Every command that takes a room
+`mn <command> --help` documents every option. Output is meant for people:
+tables, plain text, and just the ID for `send` and `join`, so
+`id=$(mn send …)` works as is. Add `--json` to any command for JSON instead. Every command that takes a room
 accepts a room ID (`!abc:example.org`) or an alias (`#ops:example.org`).
 
 With `-m`/`--markdown` the body is rendered as Markdown (the message keeps a

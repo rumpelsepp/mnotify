@@ -18,6 +18,7 @@ clap-verbosity-flag = { version = "3.0.4", default-features = false, features = 
 futures = "0.3.26"
 # Only for the MSC4153 trust settings, which matrix-sdk does not re-export.
 matrix-sdk-crypto = "0.19.1"
+jiff = "0.2.37"
 image = { version = "0.25.10", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
 keyring = "4.2.0"
 mime = "0.3.17"
@@ -25,6 +26,7 @@ mime_guess = "2.0.5"
 qrcode = { version = "0.14.1", default-features = false }
 rand = "0.10.3"
 cli-prompts = "0.1.1"
+comfy-table = "8.0.1"
 rpassword = "7.2.0"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.96"

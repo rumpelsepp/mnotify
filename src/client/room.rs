@@ -160,10 +160,10 @@ impl super::Client {
             .event_id)
     }
 
-    pub(crate) async fn query_room(&self, room: Room) -> anyhow::Result<crate::outputs::Room> {
+    pub(crate) async fn query_room(&self, room: Room) -> anyhow::Result<crate::output::Room> {
         let mut members = Vec::new();
         for member in room.members(RoomMemberships::empty()).await? {
-            members.push(crate::outputs::RoomMember {
+            members.push(crate::output::RoomMember {
                 avatar: member.avatar_url().map(ToString::to_string),
                 name: member.name().to_owned(),
                 display_name: member.display_name().map(ToOwned::to_owned),
@@ -173,7 +173,7 @@ impl super::Client {
 
         members.sort_by(|a, b| a.user_id.cmp(&b.user_id));
 
-        Ok(crate::outputs::Room {
+        Ok(crate::output::Room {
             name: room.name(),
             topic: room.topic(),
             display_name: room.display_name().await?.to_string(),

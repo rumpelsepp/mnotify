@@ -1,5 +1,5 @@
+use crate::output::Record;
 use matrix_sdk::encryption::recovery::RecoveryState;
-use serde_json::{Value, json};
 
 /// What to tell a user whose device cannot take part in MSC4153 crypto.
 pub(crate) const NOT_CROSS_SIGNED: &str = "this device is not cross-signed, so it cannot \
@@ -75,15 +75,23 @@ impl super::Client {
         Ok(())
     }
 
-    pub(crate) async fn recovery_status(&self) -> anyhow::Result<Value> {
+    pub(crate) async fn recovery_status(&self) -> anyhow::Result<Record> {
         let encryption = self.inner.encryption();
         let backups = encryption.backups();
-        Ok(json!({
-            "recovery": format!("{:?}", encryption.recovery().state()),
-            "backup": format!("{:?}", backups.state()),
-            "backup_on_server": backups.fetch_exists_on_server().await.unwrap_or(false),
-            "cross_signing": encryption.cross_signing_status().await.map(|s| format!("{s:?}")),
-            "verification": format!("{:?}", encryption.verification_state().get()),
-        }))
+        Ok(Record::new()
+            .field("recovery", format!("{:?}", encryption.recovery().state()))
+            .field("backup", format!("{:?}", backups.state()))
+            .field(
+                "backup_on_server",
+                backups.fetch_exists_on_server().await.unwrap_or(false),
+            )
+            .field(
+                "cross_signing_complete",
+                encryption
+                    .cross_signing_status()
+                    .await
+                    .is_some_and(|s| s.is_complete()),
+            )
+            .field("device_cross_signed", self.is_cross_signed().await?))
     }
 }

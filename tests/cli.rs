@@ -177,3 +177,8 @@ fn mentions_need_full_user_ids() {
         .failure()
         .stderr(predicate::str::contains("--mention"));
 }
+
+#[test]
+fn json_flag_works_after_the_subcommand() {
+    mn().args(["rooms", "--json", "--help"]).assert().success();
+}
