@@ -13,16 +13,15 @@ use matrix_sdk::ruma::presence::PresenceState;
 use matrix_sdk::ruma::serde::Raw;
 use matrix_sdk::ruma::{OwnedEventId, OwnedRoomOrAliasId, OwnedUserId};
 use matrix_sdk::{Room, RoomState};
-use serde::Serialize;
-use serde_json::value::RawValue;
 
 mod client;
-mod outputs;
+mod output;
 mod terminal;
 
 use crate::client::recovery::NOT_CROSS_SIGNED;
 use crate::client::sync::Scope;
 use crate::client::{Addressing, Client, Relation, TextKind, session};
+use crate::output::{Events, Record, Rooms};
 
 const CRATE_NAME: &str = clap::crate_name!();
 
@@ -31,6 +30,10 @@ const CRATE_NAME: &str = clap::crate_name!();
 struct Cli {
     #[command(flatten)]
     verbose: Verbosity,
+
+    /// Print machine-readable JSON instead of tables and text
+    #[arg(long, global = true)]
+    json: bool,
 
     /// Request the full state during sync
     #[arg(long)]
@@ -257,6 +260,7 @@ async fn on_room_message(
     event: Raw<AnySyncTimelineEvent>,
     room: Room,
     receipt: bool,
+    json: bool,
 ) -> anyhow::Result<()> {
     if room.state() != RoomState::Joined {
         return Ok(());
@@ -267,7 +271,11 @@ async fn on_room_message(
             .await?;
     }
 
-    println!("{}", event.into_json());
+    if json {
+        println!("{}", event.json());
+    } else {
+        println!("{}", output::event_line(event.json()));
+    }
     Ok(())
 }
 
@@ -327,7 +335,7 @@ async fn main() -> anyhow::Result<()> {
     // The default for every sync request, /v3/sync and sliding sync alike.
     client.set_presence(args.presence, None, false).await?;
 
-    let result = run(args.command, &client, sync_settings).await;
+    let result = run(args.command, &client, sync_settings, args.json).await;
 
     // Let background E2EE setup finish (also after an error): exiting while it
     // runs makes the SDK log spurious errors or even panic on shutdown.
@@ -338,7 +346,12 @@ async fn main() -> anyhow::Result<()> {
     result
 }
 
-async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> anyhow::Result<()> {
+async fn run(
+    command: Command,
+    client: &Client,
+    sync_settings: SyncSettings,
+    json: bool,
+) -> anyhow::Result<()> {
     match command.sync_need() {
         SyncNeed::Nothing => {}
         SyncNeed::Account => {
@@ -377,20 +390,11 @@ async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> 
                 None
             };
 
-            #[derive(Serialize)]
-            struct HomeserverOutput {
-                home_server: String,
-                user_id: String,
-                token: Option<String>,
-            }
-
-            let out = HomeserverOutput {
-                home_server: client.homeserver().to_string(),
-                user_id: client.user_id().context("not logged in")?.to_string(),
-                token,
-            };
-
-            println!("{}", serde_json::to_string(&out)?);
+            let out = Record::new()
+                .field("home_server", client.homeserver().as_str())
+                .field("user_id", client.user_id().context("not logged in")?)
+                .field("token", token);
+            output::print(json, &out)?;
         }
         Command::Login {
             user_id,
@@ -459,7 +463,10 @@ async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> 
         }
         Command::Join { room } => {
             let joined = client.join(&room).await?;
-            println!("{}", serde_json::json!({ "room_id": joined.room_id() }));
+            let out = Record::new()
+                .field("room_id", joined.room_id())
+                .headline("room_id");
+            output::print(json, &out)?;
         }
         Command::Logout => {
             client.logout().await?;
@@ -474,33 +481,26 @@ async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> 
                 Some(root) => client.thread(&room, &root, limit).await?,
                 None => client.messages(&room, limit).await?,
             };
-            let events: Vec<Box<RawValue>> = events
-                .into_iter()
-                .map(|e| e.into_raw().into_json())
-                .collect();
-            println!("{}", serde_json::to_string(&events)?);
+            let events = events.into_iter().map(|e| e.into_raw().into_json());
+            output::print(json, &Events(events.collect()))?;
         }
-        Command::Rooms { room } => {
-            let out = match room {
-                Some(room) => {
-                    let room_id = client.resolve_room_id(&room).await?;
-                    let Some(room) = client.get_room(&room_id) else {
-                        bail!("unknown room: {room}");
-                    };
-                    let output = client.query_room(room).await?;
-                    serde_json::to_string(&output)?
+        Command::Rooms { room } => match room {
+            Some(room) => {
+                let room_id = client.resolve_room_id(&room).await?;
+                let Some(room) = client.get_room(&room_id) else {
+                    bail!("unknown room: {room}");
+                };
+                output::print(json, &client.query_room(room).await?)?;
+            }
+            None => {
+                let mut rooms = Vec::new();
+                for room in client.rooms() {
+                    rooms.push(client.query_room(room).await?);
                 }
-                None => {
-                    let mut output = Vec::new();
-                    for room in client.rooms() {
-                        output.push(client.query_room(room).await?);
-                    }
-                    serde_json::to_string(&output)?
-                }
-            };
-
-            println!("{}", out);
-        }
+                rooms.sort_by(|a, b| a.display_name.cmp(&b.display_name));
+                output::print(json, &Rooms(rooms))?;
+            }
+        },
         Command::Redact {
             room,
             event_id,
@@ -525,11 +525,14 @@ async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> 
         },
         Command::Recovery { action } => match action {
             RecoveryAction::Status => {
-                println!("{}", client.recovery_status().await?);
+                output::print(json, &client.recovery_status().await?)?;
             }
             RecoveryAction::Enable => {
                 let key = client.recovery_enable().await?;
-                println!("{}", serde_json::json!({ "recovery_key": key }));
+                let out = Record::new()
+                    .field("recovery_key", key)
+                    .headline("recovery_key");
+                output::print(json, &out)?;
             }
             RecoveryAction::Recover { recovery_key } => {
                 let key = match recovery_key {
@@ -540,7 +543,10 @@ async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> 
             }
             RecoveryAction::Reset => {
                 let key = client.recovery_reset().await?;
-                println!("{}", serde_json::json!({ "recovery_key": key }));
+                let out = Record::new()
+                    .field("recovery_key", key)
+                    .headline("recovery_key");
+                output::print(json, &out)?;
             }
             RecoveryAction::Disable => {
                 client.recovery_disable().await?;
@@ -597,10 +603,11 @@ async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> 
                     .await?
             };
 
-            println!(
-                "{}",
-                serde_json::json!({ "room_id": room.room_id(), "event_id": event_id })
-            );
+            let out = Record::new()
+                .field("room_id", room.room_id())
+                .field("event_id", event_id)
+                .headline("event_id");
+            output::print(json, &out)?;
         }
         Command::Sync { room, receipt } => {
             let room_id = match &room {
@@ -610,12 +617,12 @@ async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> 
             match &room_id {
                 Some(room_id) => {
                     client.add_room_event_handler(room_id, move |event, room| async move {
-                        on_room_message(event, room, receipt).await
+                        on_room_message(event, room, receipt, json).await
                     });
                 }
                 None => {
                     client.add_event_handler(move |event, room| async move {
-                        on_room_message(event, room, receipt).await
+                        on_room_message(event, room, receipt, json).await
                     });
                 }
             }
@@ -632,12 +639,11 @@ async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> 
         }
         Command::Whoami => {
             let resp = client.whoami().await?;
-            let out = serde_json::json!({
-                "user_id": resp.user_id,
-                "device_id": resp.device_id,
-                "is_guest": resp.is_guest,
-            });
-            println!("{out}");
+            let out = Record::new()
+                .field("user_id", resp.user_id)
+                .field("device_id", resp.device_id)
+                .field("is_guest", resp.is_guest);
+            output::print(json, &out)?;
         }
     };
 
