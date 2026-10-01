@@ -21,6 +21,7 @@ matrix-sdk-crypto = "0.19.1"
 image = { version = "0.25.10", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
 keyring = "4.2.0"
 mime = "0.3.17"
+mime_guess = "2.0.5"
 qrcode = { version = "0.14.1", default-features = false }
 rand = "0.10.3"
 cli-prompts = "0.1.1"
@@ -40,7 +41,7 @@ xdg = "3.0.0"
 
 [dependencies.matrix-sdk]
 version = "0.19.1"
-features = ["anyhow", "markdown", "socks", "bundled-sqlite", "qrcode"]
+features = ["anyhow", "markdown", "socks", "bundled-sqlite", "qrcode", "sso-login"]
 
 [dev-dependencies]
 assert_cmd = "2.0.8"

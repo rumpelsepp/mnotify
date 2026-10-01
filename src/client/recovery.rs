@@ -1,6 +1,4 @@
-use anyhow::Context;
 use matrix_sdk::encryption::recovery::RecoveryState;
-use matrix_sdk::ruma::api::client::uiaa::{self, AuthData};
 use serde_json::{Value, json};
 
 /// What to tell a user whose device cannot take part in MSC4153 crypto.
@@ -37,24 +35,18 @@ impl super::Client {
         )
     }
 
-    /// Bootstrap a cross-signing identity (using `password` for user-interactive
-    /// auth if the server asks for it), then turn on the server-side key backup
-    /// and secret-storage recovery. Returns the recovery key -- there is no way
-    /// to recover it later, so store it somewhere safe.
-    pub(crate) async fn recovery_enable(&self, password: &str) -> anyhow::Result<String> {
+    /// Turn on the server-side key backup and secret storage for the
+    /// cross-signing keys, and return the recovery key. There is no way to
+    /// recover it later, so store it somewhere safe. Cross-signing itself is
+    /// set up at login; it is never replaced here.
+    pub(crate) async fn recovery_enable(&self) -> anyhow::Result<String> {
         let encryption = self.inner.encryption();
         encryption.wait_for_e2ee_initialization_tasks().await;
-
-        if let Err(e) = encryption.bootstrap_cross_signing(None).await {
-            let uiaa = e.as_uiaa_response().context(
-                "cross-signing bootstrap failed and the server did not fall back to a password",
-            )?;
-            let mut pw = uiaa::Password::new(self.user_id.clone().into(), password.to_owned());
-            pw.session = uiaa.session.clone();
-            encryption
-                .bootstrap_cross_signing(Some(AuthData::Password(pw)))
-                .await?;
-        }
+        anyhow::ensure!(self.is_cross_signed().await?, "{NOT_CROSS_SIGNED}");
+        anyhow::ensure!(
+            !self.recovery_enabled(),
+            "recovery is already enabled; `mn recovery reset` replaces the key"
+        );
 
         Ok(encryption
             .recovery()

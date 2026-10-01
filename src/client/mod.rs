@@ -1,7 +1,7 @@
 use std::env;
 use std::ops::Deref;
 
-use anyhow::{Context, bail};
+use anyhow::bail;
 use matrix_sdk::Client as MatrixClient;
 use matrix_sdk::cross_process_lock::CrossProcessLockConfig;
 use matrix_sdk::encryption::EncryptionSettings;
@@ -51,14 +51,15 @@ impl Client {
         .handle_refresh_tokens()
         // Invisible crypto (MSC4153): create cross-signing keys for accounts
         // that have none, share room keys only with cross-signed devices and
-        // ignore messages from devices that are not cross-signed.
+        // ignore messages from devices that are not cross-signed, including
+        // sessions from before trust was recorded.
         .with_encryption_settings(EncryptionSettings {
             auto_enable_cross_signing: true,
             ..Default::default()
         })
         .with_room_key_recipient_strategy(CollectStrategy::IdentityBasedStrategy)
         .with_decryption_settings(DecryptionSettings {
-            sender_device_trust_requirement: TrustRequirement::CrossSignedOrLegacy,
+            sender_device_trust_requirement: TrustRequirement::CrossSigned,
         })
         .cross_process_store_config(CrossProcessLockConfig::multi_process(&lock_holder))
         .sqlite_store(
@@ -113,9 +114,8 @@ impl Client {
         if !session::Meta::exists()? {
             bail!("not logged in; run `mn login @user:example.org` first");
         }
-        let meta = session::Meta::load().context("could not load meta.json")?;
-        let device_name = meta.device_name.unwrap_or_else(|| CRATE_NAME.to_string());
-        let mut client = Self::new(meta.user_id, device_name, meta.homeserver.as_deref()).await?;
+        let meta = session::Meta::load()?;
+        let mut client = Self::new(meta.user_id, meta.device_name, Some(&meta.homeserver)).await?;
         client.sliding_sync = meta.sliding_sync;
         Ok(client)
     }

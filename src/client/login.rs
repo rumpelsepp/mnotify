@@ -4,11 +4,10 @@ use matrix_sdk::authentication::oauth::qrcode::{GeneratedQrProgress, LoginProgre
 use matrix_sdk::authentication::oauth::registration::{
     ApplicationType, ClientMetadata, Localized, OAuthGrantType,
 };
+use matrix_sdk::reqwest::Url;
 use matrix_sdk::ruma::serde::Raw;
-use matrix_sdk::utils::UrlOrQuery;
 use qrcode::{EcLevel, QrCode, render::unicode};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::net::TcpListener;
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::CRATE_NAME;
 
@@ -45,33 +44,6 @@ async fn read_check_code() -> anyhow::Result<u8> {
         .read_line(&mut line)
         .await?;
     line.trim().parse().context("that is not a number")
-}
-
-/// Accept a single HTTP request on `listener` and return the query string of
-/// its request line (`GET /?loginToken=… HTTP/1.1` -> `loginToken=…`).
-async fn catch_sso_callback(listener: TcpListener) -> anyhow::Result<String> {
-    let (mut stream, _) = listener.accept().await?;
-
-    let mut buf = [0u8; 8192];
-    let n = stream.read(&mut buf).await?;
-    let request = String::from_utf8_lossy(&buf[..n]);
-
-    let query = request
-        .lines()
-        .next()
-        .and_then(|line| line.split_whitespace().nth(1))
-        .and_then(|target| target.split_once('?'))
-        .map(|(_, query)| query.to_owned())
-        .context("no query string on the SSO callback request")?;
-
-    let _ = stream
-        .write_all(
-            b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n\
-              mnotify got the login token, you can close this tab.\n",
-        )
-        .await;
-
-    Ok(query)
 }
 
 impl super::Client {
@@ -131,33 +103,34 @@ impl super::Client {
         self.persist_session()
     }
 
-    /// Log in via the legacy SSO flow (`m.login.sso`, e.g. SAML): open the
-    /// homeserver's SSO URL in a browser, then hand the `loginToken` from the
-    /// redirect back to the homeserver. `mn` catches the redirect on a local
-    /// port; forward it (`ssh -L`) when running headless.
+    /// Log in via the legacy SSO flow (`m.login.sso`, e.g. SAML): the SDK
+    /// serves the redirect on a random local port; open the printed URL in a
+    /// browser. Headless, forward that port with `ssh -L` first.
     pub(crate) async fn login_sso(&self, idp_id: Option<&str>) -> anyhow::Result<()> {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
-        let port = listener.local_addr()?.port();
-        let redirect_url = format!("http://localhost:{port}/");
-
-        let sso_url = self
+        let mut login = self
             .inner
             .matrix_auth()
-            .get_sso_login_url(&redirect_url, idp_id)
-            .await?;
-
-        eprintln!("Open this URL in a browser and sign in:\n\n    {sso_url}\n");
-        eprintln!(
-            "Waiting for the redirect to {redirect_url}\n\
-             (headless? forward the port: ssh -L {port}:localhost:{port} <host>)"
-        );
-
-        let query = catch_sso_callback(listener).await?;
-        self.inner
-            .matrix_auth()
-            .login_with_sso_callback(UrlOrQuery::Query(query))?
-            .initial_device_display_name(&self.device_name)
-            .await?;
+            .login_sso(|sso_url| async move {
+                eprintln!("Open this URL in a browser and sign in:\n\n    {sso_url}\n");
+                if let Some(port) = redirect_port(&sso_url) {
+                    eprintln!(
+                        "Headless? Forward the port first: ssh -L {port}:localhost:{port} <host>"
+                    );
+                }
+                Ok(())
+            })
+            .initial_device_display_name(&self.device_name);
+        if let Some(idp_id) = idp_id {
+            login = login.identity_provider_id(idp_id);
+        }
+        login.await?;
         self.persist_session()
     }
+}
+
+/// The local port of the `redirectUrl` in an SSO login URL.
+fn redirect_port(sso_url: &str) -> Option<u16> {
+    let url = Url::parse(sso_url).ok()?;
+    let (_, redirect) = url.query_pairs().find(|(key, _)| key == "redirectUrl")?;
+    Url::parse(&redirect).ok()?.port()
 }

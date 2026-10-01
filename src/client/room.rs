@@ -156,7 +156,7 @@ impl super::Client {
             .and_then(|s| s.to_str())
             .ok_or_else(|| anyhow!("invalid file name: {path:?}"))?;
         let data = fs::read(path).with_context(|| format!("could not read {}", path.display()))?;
-        let content_type = crate::mime::guess_mime(path)?;
+        let content_type = mime_guess::from_path(path).first_or_octet_stream();
 
         let config = if content_type.type_() == mime::IMAGE {
             image_attachment_config(&data)

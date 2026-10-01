@@ -17,7 +17,6 @@ use serde::Serialize;
 use serde_json::value::RawValue;
 
 mod client;
-mod mime;
 mod outputs;
 mod terminal;
 
@@ -38,7 +37,7 @@ struct Cli {
     full_state: bool,
 
     /// Presence to announce while syncing
-    #[arg(long, alias = "presense", default_value = "online")]
+    #[arg(long, default_value = "online")]
     presence: PresenceState,
 
     #[command(subcommand)]
@@ -49,7 +48,7 @@ struct Cli {
 #[derive(Args, Debug)]
 struct RoomArg {
     /// Room ID (!abc:example.org) or alias (#ops:example.org)
-    #[arg(short, long, visible_alias = "room-id", env = "MN_ROOM")]
+    #[arg(short, long, env = "MN_ROOM")]
     room: OwnedRoomOrAliasId,
 }
 
@@ -80,10 +79,6 @@ enum Command {
     Login {
         /// Full Matrix ID, e.g. @bot:example.org
         user_id: OwnedUserId,
-
-        /// Password; visible in `ps` and shell history, so prefer stdin or the prompt
-        #[arg(short, long, conflicts_with_all = ["qr", "sso"])]
-        password: Option<String>,
 
         /// Log in via the OAuth 2.0 device grant: `mn` shows a QR code to scan
         #[arg(long, conflicts_with = "sso")]
@@ -132,7 +127,7 @@ enum Command {
     /// Query room information
     Rooms {
         /// Only query this room (ID or alias)
-        #[arg(short, long, visible_alias = "room-id")]
+        #[arg(short, long)]
         room: Option<OwnedRoomOrAliasId>,
     },
     /// Send a message or file to a room; prints the event ID
@@ -166,7 +161,7 @@ enum Command {
     /// Sync forever and print incoming timeline events as JSON lines
     Sync {
         /// Only print events of this room (ID or alias)
-        #[arg(short, long, visible_alias = "room-id")]
+        #[arg(short, long)]
         room: Option<OwnedRoomOrAliasId>,
 
         /// Mark all received messages as read
@@ -182,7 +177,7 @@ enum Command {
         #[arg(long)]
         disable: bool,
     },
-    /// Verify this session: react to incoming requests, or start one with --device
+    /// Verify this device with another of your devices: wait for a request, or start one with --device
     Verify {
         /// Device ID of one of your own devices to start verifying
         #[arg(long)]
@@ -202,11 +197,7 @@ enum RecoveryAction {
     /// Print recovery, key-backup and cross-signing status
     Status,
     /// Bootstrap cross-signing and key backup, then print the recovery key
-    Enable {
-        /// Password for user-interactive auth; read interactively if omitted
-        #[arg(short, long)]
-        password: Option<String>,
-    },
+    Enable,
     /// Restore secrets from a recovery key (read from stdin if omitted)
     Recover { recovery_key: Option<String> },
     /// Replace the recovery key with a fresh one
@@ -388,7 +379,6 @@ async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> 
         Command::Login {
             user_id,
             device_name,
-            password,
             qr,
             sso,
             idp,
@@ -406,10 +396,7 @@ async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> 
             } else if qr {
                 client.login_qr().await.context("QR login failed")?;
             } else {
-                let password = match password {
-                    Some(p) => p,
-                    None => terminal::read_password()?,
-                };
+                let password = terminal::read_password()?;
                 client
                     .login_password(&password)
                     .await
@@ -448,8 +435,8 @@ async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> 
 
             session::Meta {
                 user_id,
-                device_name: Some(device_name),
-                homeserver: Some(client.homeserver().to_string()),
+                device_name,
+                homeserver: client.homeserver().to_string(),
                 sliding_sync: client.detect_sliding_sync().await,
             }
             .dump()?;
@@ -520,12 +507,8 @@ async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> 
             RecoveryAction::Status => {
                 println!("{}", client.recovery_status().await?);
             }
-            RecoveryAction::Enable { password } => {
-                let password = match password {
-                    Some(p) => p,
-                    None => terminal::read_password()?,
-                };
-                let key = client.recovery_enable(&password).await?;
+            RecoveryAction::Enable => {
+                let key = client.recovery_enable().await?;
                 println!("{}", serde_json::json!({ "recovery_key": key }));
             }
             RecoveryAction::Recover { recovery_key } => {
