@@ -381,6 +381,15 @@ async fn main() -> anyhow::Result<()> {
                 .wait_for_e2ee_initialization_tasks()
                 .await;
 
+            if let Some(path) = session::secrets_file(&user_id)? {
+                eprintln!(
+                    "warning: no system keyring in use; the access token and the store \
+                     passphrase are kept in plain text in {} (mode 0600). Anyone who can \
+                     read this file can act as {user_id}.",
+                    path.display()
+                );
+            }
+
             session::Meta {
                 user_id,
                 device_name: Some(device_name),

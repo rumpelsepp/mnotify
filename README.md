@@ -46,13 +46,13 @@ posts into a room you are in.
 **1. Create a bot account** on your homeserver (e.g. `@backupbot:example.org`)
 with Element or your server's admin tools.
 
-**2. Log in on the server.** A server usually has no desktop keyring, so tell
-`mn` to keep its secrets in a file readable only by you:
+**2. Log in on the server.** A server usually has no desktop keyring; `mn`
+notices that and keeps its secrets in a file readable only by you:
 
 ```
-$ export MN_NO_KEYRING=1
 $ mn login @backupbot:example.org
 password:
+warning: no system keyring in use; the access token and the store passphrase are kept in plain text in ~/.local/state/mnotify/@backupbot:example.org/session.json (mode 0600). Anyone who can read this file can act as @backupbot:example.org.
 ```
 
 The password can also come from stdin (`mn login … < pwfile`), which is what
@@ -241,10 +241,19 @@ Default room for every command that takes `-r`/`--room`.
 `mnotify` stores the session (access/refresh token) and the passphrase of the
 encrypted state store in the system keyring via the
 [Secret Service API](https://specifications.freedesktop.org/secret-service/latest/).
-Headless machines usually have no Secret Service; set this variable to keep the
-secrets in `$XDG_STATE_HOME/mnotify/$USER_ID/session.json` (mode `0600`)
-instead. Anyone who can read that file can act as the account, so use a
-dedicated bot account and a dedicated system user.
+If no keyring is usable at the first login (no session bus or no Secret
+Service, as on most servers), it falls back to
+`$XDG_STATE_HOME/mnotify/$USER_ID/session.json` (mode `0600`) automatically,
+and `mn login` prints a warning. Once that file exists it is always used. Set
+`MN_NO_KEYRING` to use the file even where a keyring is available.
+
+Anyone who can read that file can act as the account, so use a dedicated bot
+account and a dedicated system user.
+
+If you logged in where a keyring was available (e.g. on the desktop) and later
+run `mn` where it is not (e.g. over SSH without a session bus), `mn` refuses to
+continue rather than creating a new store passphrase. Run it from the desktop
+session, or start over with `mn clean` and log in again.
 
 #### `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`
 
@@ -270,5 +279,5 @@ filter, e.g. `RUST_LOG=matrix_sdk=debug`. Overrides `-v`/`-q`.
 [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html).
 
 - `$XDG_STATE_HOME/mnotify/meta.json` -- which user is logged in, and its homeserver URL.
-- `$XDG_STATE_HOME/mnotify/$USER_ID/session.json` -- session + store passphrase, only with `MN_NO_KEYRING`.
+- `$XDG_STATE_HOME/mnotify/$USER_ID/session.json` -- session + store passphrase, only if no keyring is used.
 - `$XDG_STATE_HOME/mnotify/$USER_ID/store/` -- the SQLite state/crypto store, encrypted with the store passphrase.

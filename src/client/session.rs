@@ -12,7 +12,7 @@ use matrix_sdk::ruma::{OwnedUserId, UserId};
 use matrix_sdk::{AuthSession, Client as MatrixClient, SessionTokens};
 use rand::distr::{Alphanumeric, SampleString};
 use serde::{Deserialize, Serialize};
-use tracing::error;
+use tracing::{debug, error};
 
 use super::CRATE_NAME;
 
@@ -112,13 +112,19 @@ impl Persisted {
     }
 }
 
-/// The typical headless failure (no Secret Service on the session bus) reads
-/// "No default store has been set"; point at the way out.
 fn keyring_error(e: keyring::Error) -> anyhow::Error {
-    anyhow::Error::new(e).context(
-        "the system keyring (Secret Service) is not usable; on a headless machine \
-         set MN_NO_KEYRING=1 to keep the secrets in a 0600 file instead",
-    )
+    anyhow::Error::new(e).context("system keyring (Secret Service) error")
+}
+
+/// An entry in the system keyring, if the keyring can actually be used: the
+/// store initialises (fails without a session bus, i.e. on most servers) and
+/// a lookup does not fail (fails without a running Secret Service).
+fn usable_keyring_entry(user_id: &UserId) -> keyring::Result<keyring::Entry> {
+    let entry = keyring::Entry::new(CRATE_NAME, user_id.as_str())?;
+    match entry.get_password() {
+        Ok(_) | Err(keyring::Error::NoEntry) => Ok(entry),
+        Err(e) => Err(e),
+    }
 }
 
 enum SessionStore {
@@ -127,12 +133,33 @@ enum SessionStore {
 }
 
 impl SessionStore {
+    /// Where the secrets of `user_id` live. Once a `session.json` exists it
+    /// is always used, so the choice is stable across invocations. Before
+    /// that, the system keyring is preferred and the file is the automatic
+    /// fallback on machines without one.
     fn for_user(user_id: &UserId) -> anyhow::Result<Self> {
-        if env::var_os("MN_NO_KEYRING").is_some() {
-            Ok(Self::File(session_json_path(user_id)?))
-        } else {
-            let entry = keyring::Entry::new(CRATE_NAME, user_id.as_str()).map_err(keyring_error)?;
-            Ok(Self::Keyring(entry))
+        let path = session_json_path(user_id)?;
+        if env::var_os("MN_NO_KEYRING").is_some() || path.try_exists()? {
+            return Ok(Self::File(path));
+        }
+
+        match usable_keyring_entry(user_id) {
+            Ok(entry) => Ok(Self::Keyring(entry)),
+            // A store without a session file means the secrets went into a
+            // keyring that is not reachable now (e.g. logged in from the
+            // desktop, running from cron). A fresh passphrase would make
+            // the existing store unreadable, so stop here.
+            Err(e) if state_db_path(user_id)?.try_exists()? => {
+                Err(keyring_error(e).context(format!(
+                    "the secrets of {user_id} are in the system keyring, which is \
+                     not reachable from here; run mn where the keyring is \
+                     unlocked, or start over with `mn clean {user_id}` and log in again"
+                )))
+            }
+            Err(e) => {
+                debug!("no usable system keyring ({e}), using {}", path.display());
+                Ok(Self::File(path))
+            }
         }
     }
 
@@ -181,6 +208,15 @@ impl SessionStore {
             }
         }
     }
+}
+
+/// The plain file holding the secrets of `user_id`, or `None` if they are in
+/// the system keyring.
+pub(crate) fn secrets_file(user_id: &UserId) -> anyhow::Result<Option<PathBuf>> {
+    Ok(match SessionStore::for_user(user_id)? {
+        SessionStore::File(path) => Some(path),
+        SessionStore::Keyring(_) => None,
+    })
 }
 
 /// Load the persisted blob for `user_id`, initialising it (with a fresh store
