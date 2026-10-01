@@ -5,9 +5,12 @@ use std::path::Path;
 use anyhow::{Context, anyhow, bail};
 use image::{GenericImageView, ImageFormat};
 use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseImageInfo, Thumbnail};
-use matrix_sdk::room::{Messages, MessagesOptions, Room};
+use matrix_sdk::deserialized_responses::TimelineEvent;
+use matrix_sdk::room::reply::{EnforceThread, Reply};
+use matrix_sdk::room::{IncludeRelations, MessagesOptions, RelationsOptions, Room};
+use matrix_sdk::ruma::events::relation::RelationType;
 use matrix_sdk::ruma::events::room::message::{
-    AddMentions, ForwardThread, RoomMessageEvent, RoomMessageEventContent,
+    AddMentions, ReplyWithinThread, RoomMessageEventContentWithoutRelation,
 };
 use matrix_sdk::ruma::{EventId, OwnedEventId, OwnedRoomId, RoomId, RoomOrAliasId, UInt};
 use matrix_sdk::{RoomMemberships, RoomState};
@@ -107,41 +110,23 @@ impl super::Client {
         body: &str,
         kind: TextKind,
         markdown: bool,
+        relation: Option<Relation>,
     ) -> anyhow::Result<OwnedEventId> {
+        type Content = RoomMessageEventContentWithoutRelation;
         let content = match (kind, markdown) {
-            (TextKind::Text, false) => RoomMessageEventContent::text_plain(body),
-            (TextKind::Text, true) => RoomMessageEventContent::text_markdown(body),
-            (TextKind::Notice, false) => RoomMessageEventContent::notice_plain(body),
-            (TextKind::Notice, true) => RoomMessageEventContent::notice_markdown(body),
-            (TextKind::Emote, false) => RoomMessageEventContent::emote_plain(body),
-            (TextKind::Emote, true) => RoomMessageEventContent::emote_markdown(body),
+            (TextKind::Text, false) => Content::text_plain(body),
+            (TextKind::Text, true) => Content::text_markdown(body),
+            (TextKind::Notice, false) => Content::notice_plain(body),
+            (TextKind::Notice, true) => Content::notice_markdown(body),
+            (TextKind::Emote, false) => Content::emote_plain(body),
+            (TextKind::Emote, true) => Content::emote_markdown(body),
         };
-        Ok(room.send(content).await?.response.event_id)
-    }
-
-    pub(crate) async fn send_message_reply(
-        &self,
-        room: &Room,
-        event_id: &EventId,
-        body: &str,
-        markdown: bool,
-    ) -> anyhow::Result<OwnedEventId> {
-        let replied_to = room
-            .event(event_id, None)
-            .await?
-            .raw()
-            .deserialize_as_unchecked::<RoomMessageEvent>()?;
-        let original = replied_to
-            .as_original()
-            .ok_or_else(|| anyhow!("cannot reply to a redacted event"))?;
-
-        let content = if markdown {
-            RoomMessageEventContent::text_markdown(body)
-        } else {
-            RoomMessageEventContent::text_plain(body)
-        }
-        .make_reply_to(original, ForwardThread::Yes, AddMentions::No);
-
+        let content = match relation {
+            // Boxed: the SDK future is deep enough to hit rustc's query depth
+            // limit when inlined into this one.
+            Some(relation) => Box::pin(room.make_reply_event(content, relation.into())).await?,
+            None => content.with_relation(None),
+        };
         Ok(room.send(content).await?.response.event_id)
     }
 
@@ -149,6 +134,7 @@ impl super::Client {
         &self,
         room: &Room,
         path: impl AsRef<Path>,
+        relation: Option<Relation>,
     ) -> anyhow::Result<OwnedEventId> {
         let path = path.as_ref();
         let file_name = path
@@ -158,11 +144,12 @@ impl super::Client {
         let data = fs::read(path).with_context(|| format!("could not read {}", path.display()))?;
         let content_type = mime_guess::from_path(path).first_or_octet_stream();
 
-        let config = if content_type.type_() == mime::IMAGE {
+        let mut config = if content_type.type_() == mime::IMAGE {
             image_attachment_config(&data)
         } else {
             AttachmentConfig::new()
         };
+        config.reply = relation.map(Into::into);
 
         Ok(room
             .send_attachment(file_name, &content_type, data, config)
@@ -203,9 +190,58 @@ impl super::Client {
         })
     }
 
-    pub(crate) async fn messages(&self, room: &Room, limit: u64) -> anyhow::Result<Messages> {
+    /// The latest `limit` events of the room, oldest first.
+    pub(crate) async fn messages(
+        &self,
+        room: &Room,
+        limit: u64,
+    ) -> anyhow::Result<Vec<TimelineEvent>> {
         let mut options = MessagesOptions::backward();
         options.limit = limit.try_into()?;
-        Ok(room.messages(options).await?)
+        let mut events = room.messages(options).await?.chunk;
+        events.reverse();
+        Ok(events)
+    }
+
+    /// A thread: its root and the latest `limit` events in it, oldest first.
+    pub(crate) async fn thread(
+        &self,
+        room: &Room,
+        root: &EventId,
+        limit: u64,
+    ) -> anyhow::Result<Vec<TimelineEvent>> {
+        let mut options = RelationsOptions {
+            include_relations: IncludeRelations::RelationsOfType(RelationType::Thread),
+            ..Default::default()
+        };
+        options.limit = Some(limit.try_into()?);
+        let mut events = room.relations(root.to_owned(), options).await?.chunk;
+        events.push(room.event(root, None).await?);
+        events.reverse();
+        Ok(events)
+    }
+}
+
+/// How a new message relates to an existing one.
+pub(crate) enum Relation {
+    /// A reply to the event; stays in its thread if it is in one.
+    Reply(OwnedEventId),
+    /// A message in the thread of the event, starting one if there is none.
+    Thread(OwnedEventId),
+}
+
+impl From<Relation> for Reply {
+    fn from(relation: Relation) -> Self {
+        let (event_id, enforce_thread) = match relation {
+            Relation::Reply(event_id) => (event_id, EnforceThread::MaybeThreaded),
+            Relation::Thread(event_id) => {
+                (event_id, EnforceThread::Threaded(ReplyWithinThread::No))
+            }
+        };
+        Reply {
+            event_id,
+            enforce_thread,
+            add_mentions: AddMentions::No,
+        }
     }
 }

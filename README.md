@@ -24,7 +24,7 @@ management beyond joining. What it does support, using the categories of the
 | End-to-end encryption | ✅ supported | Send to and read from encrypted rooms (incl. attachments), emoji verification, key backup and recovery |
 | SSO | ✅ supported | Legacy `m.login.sso` (SAML, OIDC upstreams) via `--sso`, also headless over an SSH port forward |
 | OAuth 2.0 / OIDC | ◐ partial | `--qr`: login by scanning a QR code with an already signed-in device (MSC4108). No browser-based OAuth flow yet |
-| Threads | ◐ partial | Replies to a message in a thread stay in that thread; starting a new thread is not supported |
+| Threads | ✅ supported | Start or continue a thread with `send --thread` (text, notices, files), read one with `messages --thread`; replies stay in their thread |
 | Spaces | ✗ | Spaces are flagged in `mn rooms`, nothing more |
 | Multiple accounts | ✗ | One account per `meta.json`; switch with `MN_META_FILE` |
 | Invisible crypto (MSC4153) | ✅ supported | Room keys only for cross-signed devices, messages from other devices are ignored; `mn` cross-signs a new account itself |
@@ -85,14 +85,20 @@ $ export MN_ROOM='#ops:example.org'
 $ uptime | mn send
 ```
 
-### Recipe: follow-ups in a thread of replies
+### Recipe: one thread per job
 
-`send` prints the new event ID, so later messages can reply to the first one:
+`send` prints the new event ID. Use it as the root of a thread that collects
+the details, so the room itself only shows one line per job:
 
 ```
 $ id=$(mn send "Deploy of v1.4 started" | jq -r .event_id)
-$ ./deploy.sh && mn send --reply-to "$id" "Deploy finished ✅"
+$ ./deploy.sh > deploy.log 2>&1; mn send --thread "$id" -a deploy.log
+$ mn send --thread "$id" -n "Deploy finished ✅"
+$ mn messages --thread "$id"
 ```
+
+`--thread` accepts the root or any event in the thread; `--reply-to` answers a
+single message instead.
 
 ### Recipe: a tiny command bot
 
