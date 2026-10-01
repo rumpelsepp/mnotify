@@ -2629,6 +2629,7 @@ dependencies = [
  "image",
  "keyring",
  "matrix-sdk",
+ "matrix-sdk-crypto",
  "mime",
  "predicates",
  "qrcode",

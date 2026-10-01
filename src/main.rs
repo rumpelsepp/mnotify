@@ -21,6 +21,7 @@ mod mime;
 mod outputs;
 mod terminal;
 
+use crate::client::recovery::NOT_CROSS_SIGNED;
 use crate::client::sync::Scope;
 use crate::client::{Client, TextKind, session};
 
@@ -430,6 +431,21 @@ async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> 
                 );
             }
 
+            // The SDK creates cross-signing keys in the background if the
+            // account has none yet; wait for it before reporting the state.
+            client
+                .encryption()
+                .wait_for_e2ee_initialization_tasks()
+                .await;
+            if !client.is_cross_signed().await? {
+                eprintln!("warning: {NOT_CROSS_SIGNED}.");
+            } else if !client.recovery_enabled() {
+                eprintln!(
+                    "hint: run `mn recovery enable` to keep the cross-signing keys in \
+                     secret storage; without it, a future login cannot be cross-signed."
+                );
+            }
+
             session::Meta {
                 user_id,
                 device_name: Some(device_name),
@@ -537,6 +553,11 @@ async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> 
             message,
         } => {
             let room = client.joined_room(&room.room).await?;
+            anyhow::ensure!(
+                !room.latest_encryption_state().await?.is_encrypted()
+                    || client.is_cross_signed().await?,
+                "{NOT_CROSS_SIGNED}"
+            );
 
             let event_id = if let Some(path) = attachment {
                 client.send_attachment(&room, path).await?

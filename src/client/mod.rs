@@ -4,7 +4,9 @@ use std::ops::Deref;
 use anyhow::{Context, bail};
 use matrix_sdk::Client as MatrixClient;
 use matrix_sdk::cross_process_lock::CrossProcessLockConfig;
+use matrix_sdk::encryption::EncryptionSettings;
 use matrix_sdk::ruma::OwnedUserId;
+use matrix_sdk_crypto::{CollectStrategy, DecryptionSettings, TrustRequirement};
 
 use crate::CRATE_NAME;
 
@@ -47,6 +49,17 @@ impl Client {
             None => builder.server_name_or_homeserver_url(user_id.server_name()),
         }
         .handle_refresh_tokens()
+        // Invisible crypto (MSC4153): create cross-signing keys for accounts
+        // that have none, share room keys only with cross-signed devices and
+        // ignore messages from devices that are not cross-signed.
+        .with_encryption_settings(EncryptionSettings {
+            auto_enable_cross_signing: true,
+            ..Default::default()
+        })
+        .with_room_key_recipient_strategy(CollectStrategy::IdentityBasedStrategy)
+        .with_decryption_settings(DecryptionSettings {
+            sender_device_trust_requirement: TrustRequirement::CrossSignedOrLegacy,
+        })
         .cross_process_store_config(CrossProcessLockConfig::multi_process(&lock_holder))
         .sqlite_store(
             session::state_db_path(&user_id)?,

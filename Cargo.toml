@@ -16,6 +16,8 @@ anyhow = { version = "1.0.71", features = ["backtrace"] }
 clap = { version = "4.2.7", features = ["derive", "cargo", "env"] }
 clap-verbosity-flag = { version = "3.0.4", default-features = false, features = ["tracing"] }
 futures = "0.3.26"
+# Only for the MSC4153 trust settings, which matrix-sdk does not re-export.
+matrix-sdk-crypto = "0.19.1"
 image = { version = "0.25.10", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
 keyring = "4.2.0"
 mime = "0.3.17"

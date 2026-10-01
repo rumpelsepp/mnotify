@@ -27,7 +27,7 @@ management beyond joining. What it does support, using the categories of the
 | Threads | ◐ partial | Replies to a message in a thread stay in that thread; starting a new thread is not supported |
 | Spaces | ✗ | Spaces are flagged in `mn rooms`, nothing more |
 | Multiple accounts | ✗ | One account per `meta.json`; switch with `MN_META_FILE` |
-| Invisible crypto (MSC4153) | ✗ | Messages are still encrypted for unverified devices |
+| Invisible crypto (MSC4153) | ✅ supported | Room keys only for cross-signed devices, messages from other devices are ignored; `mn` cross-signs a new account itself |
 | Sliding sync | ✅ supported | Simplified sliding sync (MSC4186) where the homeserver offers it, `/v3/sync` otherwise |
 | Voice / video calls | ✗ | Out of scope |
 | Custom emoji / image packs | ✗ | Out of scope |
@@ -159,35 +159,35 @@ skip the server's identity-provider picker.
 
 ## Encrypted rooms
 
-Sending into encrypted rooms works right after login. To also *read* encrypted
-history, and so that other people's clients stop flagging the bot as
-unverified, verify the device once.
+`mn` follows [MSC4153](https://github.com/matrix-org/matrix-spec-proposals/blob/main/proposals/4153-invisible-crypto.md)
+("invisible crypto"): it shares room keys only with cross-signed devices and
+ignores encrypted messages from devices that are not cross-signed. Element does
+the same in its "exclude insecure devices" mode. A device that is not
+cross-signed therefore cannot take part in encrypted rooms, and `mn` refuses to
+send there from one.
 
-Either verify it from another device of the same account...
-
-```
-$ mn verify
-```
-
-Start the verification from Element (or another client), compare the emojis and
-confirm. `mn verify --device <DEVICE_ID>` starts it from this side instead.
-
-...or, if you have set up recovery before, restore the cross-signing and backup
-keys from your recovery key:
-
-```
-$ mn recovery recover < recovery-key.txt
-```
-
-The first device of an account has to enable recovery once, which bootstraps
-cross-signing and the server-side key backup and prints the recovery key:
+**New account** (e.g. a dedicated bot account): `mn login` creates the
+cross-signing keys and signs its device itself. Then store them in secret
+storage once, so that later logins can be signed as well, and keep the printed
+recovery key:
 
 ```
 $ mn recovery enable
 {"recovery_key":"EsT ..."}
 ```
 
-`mn recovery status` reports the current recovery / backup / cross-signing state.
+**Account that already has cross-signing** (e.g. set up in Element): `mn login`
+warns that the new device is not cross-signed. Sign it with the recovery key...
+
+```
+$ mn recovery recover < recovery-key.txt
+```
+
+...or verify it from another signed-in device: run `mn verify`, start the
+verification there, compare the emojis and confirm. `mn verify --device
+<DEVICE_ID>` starts it from this side instead.
+
+`mn recovery status` reports the current state.
 
 ## Command overview
 
