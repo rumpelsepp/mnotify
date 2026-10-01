@@ -1,8 +1,42 @@
 use anyhow::Context;
+use matrix_sdk::encryption::recovery::RecoveryState;
 use matrix_sdk::ruma::api::client::uiaa::{self, AuthData};
 use serde_json::{Value, json};
 
+/// What to tell a user whose device cannot take part in MSC4153 crypto.
+pub(crate) const NOT_CROSS_SIGNED: &str = "this device is not cross-signed, so it cannot \
+    send encrypted messages and other clients ignore its encrypted messages (MSC4153); \
+    cross-sign it with `mn recovery recover` (recovery key) or `mn verify` (from another \
+    signed-in device)";
+
 impl super::Client {
+    /// Whether this device is cross-signed by its owner. The local copy of
+    /// our own device can lag behind, e.g. right after the SDK cross-signed
+    /// it, so a "no" is double-checked against the server.
+    pub(crate) async fn is_cross_signed(&self) -> anyhow::Result<bool> {
+        let encryption = self.inner.encryption();
+        let signed = async || -> anyhow::Result<bool> {
+            Ok(encryption
+                .get_own_device()
+                .await?
+                .is_some_and(|device| device.is_cross_signed_by_owner()))
+        };
+        if signed().await? {
+            return Ok(true);
+        }
+        encryption.request_user_identity(&self.user_id).await?;
+        signed().await
+    }
+
+    /// Whether secret storage holds the cross-signing keys, so that a later
+    /// login can be cross-signed with the recovery key.
+    pub(crate) fn recovery_enabled(&self) -> bool {
+        matches!(
+            self.inner.encryption().recovery().state(),
+            RecoveryState::Enabled
+        )
+    }
+
     /// Bootstrap a cross-signing identity (using `password` for user-interactive
     /// auth if the server asks for it), then turn on the server-side key backup
     /// and secret-storage recovery. Returns the recovery key -- there is no way
