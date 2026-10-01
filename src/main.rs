@@ -7,8 +7,8 @@ use clap_verbosity_flag::Verbosity;
 use matrix_sdk::config::SyncSettings;
 use matrix_sdk::ruma::api::client::filter::FilterDefinition;
 use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
-use matrix_sdk::ruma::events::AnySyncTimelineEvent;
 use matrix_sdk::ruma::events::receipt::ReceiptThread;
+use matrix_sdk::ruma::events::{AnySyncTimelineEvent, Mentions};
 use matrix_sdk::ruma::presence::PresenceState;
 use matrix_sdk::ruma::serde::Raw;
 use matrix_sdk::ruma::{OwnedEventId, OwnedRoomOrAliasId, OwnedUserId};
@@ -22,7 +22,7 @@ mod terminal;
 
 use crate::client::recovery::NOT_CROSS_SIGNED;
 use crate::client::sync::Scope;
-use crate::client::{Client, Relation, TextKind, session};
+use crate::client::{Addressing, Client, Relation, TextKind, session};
 
 const CRATE_NAME: &str = clap::crate_name!();
 
@@ -162,6 +162,14 @@ enum Command {
         /// Post into the thread of this event, starting one if there is none
         #[arg(long, value_name = "EVENT_ID", conflicts_with = "reply_to")]
         thread: Option<OwnedEventId>,
+
+        /// Notify this user (repeatable)
+        #[arg(long, value_name = "USER_ID")]
+        mention: Vec<OwnedUserId>,
+
+        /// Notify everyone in the room (@room); needs the power level for it
+        #[arg(long)]
+        mention_room: bool,
 
         /// Message text; read from stdin if omitted
         message: Option<String>,
@@ -542,6 +550,8 @@ async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> 
             room,
             reply_to,
             thread,
+            mention,
+            mention_room,
             markdown,
             notice,
             emote,
@@ -555,11 +565,19 @@ async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> 
                 "{NOT_CROSS_SIGNED}"
             );
 
-            let relation = reply_to
-                .map(Relation::Reply)
-                .or(thread.map(Relation::Thread));
+            if mention_room {
+                client.ensure_can_mention_room(&room).await?;
+            }
+            let mut mentions = Mentions::with_user_ids(mention);
+            mentions.room = mention_room;
+            let addressing = Addressing {
+                relation: reply_to
+                    .map(Relation::Reply)
+                    .or(thread.map(Relation::Thread)),
+                mentions,
+            };
             let event_id = if let Some(path) = attachment {
-                client.send_attachment(&room, path, relation).await?
+                client.send_attachment(&room, path, addressing).await?
             } else {
                 let body = match message {
                     Some(message) => message,
@@ -575,7 +593,7 @@ async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> 
                     TextKind::Text
                 };
                 client
-                    .send_text(&room, &body, kind, markdown, relation)
+                    .send_text(&room, &body, kind, markdown, addressing)
                     .await?
             };
 
