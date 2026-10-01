@@ -34,7 +34,7 @@ fn guess_mime_extension(path: &Path) -> mime::Mime {
             "png" => mime::IMAGE_PNG,
             "pdf" => mime::APPLICATION_PDF,
             "opus" | "ogg" => "audio/ogg".parse().unwrap(),
-            "mp3" => "audio/mp3".parse().unwrap(),
+            "mp3" => "audio/mpeg".parse().unwrap(),
             _ => mime::APPLICATION_OCTET_STREAM,
         },
         None => mime::APPLICATION_OCTET_STREAM,

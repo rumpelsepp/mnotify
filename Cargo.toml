@@ -1,6 +1,7 @@
 [package]
 name = "mnotify"
 version = "0.2.0"
+description = "Send and receive Matrix messages from scripts and headless servers"
 edition = "2024"
 rust-version = "1.93"
 keywords = ["matrix", "chat", "messaging", "cli"]
@@ -12,7 +13,7 @@ license = "EUPL-1.2"
 
 [dependencies]
 anyhow = { version = "1.0.71", features = ["backtrace"] }
-clap = { version = "4.2.7", features = ["derive", "cargo"] }
+clap = { version = "4.2.7", features = ["derive", "cargo", "env"] }
 clap-verbosity-flag = { version = "3.0.4", default-features = false, features = ["tracing"] }
 futures = "0.3.26"
 image = { version = "0.25.10", default-features = false, features = ["gif", "jpeg", "png", "webp"] }

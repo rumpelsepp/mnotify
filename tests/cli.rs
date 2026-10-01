@@ -67,3 +67,71 @@ fn idp_requires_sso() {
         .failure()
         .stderr(predicate::str::contains("--sso"));
 }
+
+#[test]
+fn send_accepts_ids_and_aliases_and_mn_room() {
+    mn().args(["send", "--help"]).assert().success().stdout(
+        predicate::str::contains("#ops:example.org")
+            .and(predicate::str::contains("MN_ROOM"))
+            .and(predicate::str::contains("--room-id")),
+    );
+}
+
+#[test]
+fn room_without_sigil_is_rejected() {
+    mn().args(["send", "-r", "ops", "hi"])
+        .env_remove("MN_ROOM")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--room"));
+}
+
+#[test]
+fn attachment_cannot_be_a_notice() {
+    mn().args(["send", "-r", "#ops:example.org", "-n", "-a", "x.png"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
+fn old_presense_spelling_still_parses() {
+    mn().args(["--presense", "offline", "--help"])
+        .assert()
+        .success();
+}
+
+/// Point all state at an empty temp dir so nothing real is touched.
+fn isolated(dir: &std::path::Path) -> Command {
+    let mut cmd = mn();
+    cmd.env("XDG_STATE_HOME", dir)
+        .env_remove("MN_META_FILE")
+        .env_remove("MN_ROOM")
+        .env("MN_NO_KEYRING", "1");
+    cmd
+}
+
+fn temp_dir(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("mn-test-{name}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+#[test]
+fn not_logged_in_says_how_to_log_in() {
+    let dir = temp_dir("no-login");
+    isolated(&dir)
+        .args(["send", "-r", "#ops:example.org", "hi"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("mn login"));
+}
+
+#[test]
+fn clean_works_offline() {
+    let dir = temp_dir("clean");
+    isolated(&dir)
+        .args(["clean", "@nobody:invalid.example"])
+        .assert()
+        .success();
+}

@@ -15,6 +15,8 @@ use matrix_sdk::{
     },
 };
 
+use tracing::warn;
+
 use crate::terminal;
 
 async fn sas_verification_handler(sas: SasVerification) {
@@ -23,8 +25,11 @@ async fn sas_verification_handler(sas: SasVerification) {
 
     println!("Starting verification with {other_user_id} {other_device_id}");
 
-    if !sas.we_started() {
-        sas.accept().await.unwrap();
+    if !sas.we_started()
+        && let Err(e) = sas.accept().await
+    {
+        warn!("could not accept the verification: {e}");
+        return;
     }
 
     let mut stream = sas.changes();
@@ -35,15 +40,28 @@ async fn sas_verification_handler(sas: SasVerification) {
                 emojis,
                 decimals: _,
             } => {
+                let Some(emojis) = emojis else {
+                    warn!("the other device does not support emoji verification");
+                    let _ = sas.cancel().await;
+                    break;
+                };
                 println!("Confirm that the emojis match!");
-                println!("{}", format_emojis(emojis.unwrap().emojis));
+                println!("{}", format_emojis(emojis.emojis));
 
                 let sas = sas.clone();
                 tokio::spawn(async move {
-                    if terminal::confirm("confirm").await.unwrap() {
-                        sas.confirm().await.unwrap();
-                    } else {
-                        sas.cancel().await.unwrap();
+                    // Anything but an explicit "yes" (including a missing
+                    // terminal) cancels: never confirm by accident.
+                    let result = match terminal::confirm("confirm").await {
+                        Ok(true) => sas.confirm().await,
+                        Ok(false) => sas.cancel().await,
+                        Err(e) => {
+                            warn!("{e}");
+                            sas.cancel().await
+                        }
+                    };
+                    if let Err(e) = result {
+                        warn!("could not answer the verification: {e}");
                     }
                 });
             }
@@ -110,16 +128,18 @@ impl super::Client {
     pub(crate) async fn set_sas_handlers(&self) -> anyhow::Result<()> {
         self.inner.add_event_handler(
             |ev: ToDeviceKeyVerificationRequestEvent, client: MatrixClient| async move {
-                let request = client
+                let Some(request) = client
                     .encryption()
                     .get_verification_request(&ev.sender, &ev.content.transaction_id)
                     .await
-                    .expect("Request object wasn't created");
+                else {
+                    warn!("unknown verification request from {}", ev.sender);
+                    return;
+                };
 
-                request
-                    .accept()
-                    .await
-                    .expect("Can't accept verification request");
+                if let Err(e) = request.accept().await {
+                    warn!("can't accept verification request: {e}");
+                }
             },
         );
 
@@ -143,12 +163,12 @@ impl super::Client {
                         .get_verification_request(&ev.sender, &ev.event_id)
                         .await
                     else {
-                        tracing::warn!("creating verification request failed");
+                        warn!("creating verification request failed");
                         return;
                     };
 
                     let Ok(()) = request.accept().await else {
-                        tracing::warn!("can't accept verification request");
+                        warn!("can't accept verification request");
                         return;
                     };
                 }

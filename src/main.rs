@@ -1,8 +1,8 @@
-use std::env;
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use anyhow::{Context, bail};
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
 use futures::StreamExt;
 use matrix_sdk::config::SyncSettings;
@@ -12,7 +12,7 @@ use matrix_sdk::ruma::events::AnySyncTimelineEvent;
 use matrix_sdk::ruma::events::receipt::ReceiptThread;
 use matrix_sdk::ruma::presence::PresenceState;
 use matrix_sdk::ruma::serde::Raw;
-use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId, OwnedUserId};
+use matrix_sdk::ruma::{OwnedEventId, OwnedRoomOrAliasId, OwnedUserId};
 use matrix_sdk::{Room, RoomState};
 use serde::Serialize;
 use serde_json::value::RawValue;
@@ -33,21 +33,32 @@ struct Cli {
     verbose: Verbosity,
 
     /// Request the full state during sync
-    #[arg(short, long)]
+    #[arg(long)]
     full_state: bool,
 
-    /// Presence value while syncing
-    #[arg(short, long, default_value = "online")]
-    presense: PresenceState,
+    /// Presence to announce while syncing
+    #[arg(long, alias = "presense", default_value = "online")]
+    presence: PresenceState,
 
     #[command(subcommand)]
     command: Command,
 }
 
+/// The room a command acts on.
+#[derive(Args, Debug)]
+struct RoomArg {
+    /// Room ID (!abc:example.org) or alias (#ops:example.org)
+    #[arg(short, long, visible_alias = "room-id", env = "MN_ROOM")]
+    room: OwnedRoomOrAliasId,
+}
+
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Delete session store and secrets (dangerous!)
-    Clean { user_id: OwnedUserId },
+    /// Delete the local session, store and secrets of a user (no server call)
+    Clean {
+        /// Full Matrix ID, e.g. @bot:example.org
+        user_id: OwnedUserId,
+    },
     /// Get information about your homeserver and login
     #[command(alias = "hs")]
     Homeserver {
@@ -59,10 +70,17 @@ enum Command {
         #[arg(short = 't', long = "token")]
         include_token: bool,
     },
-    /// Login to a homeserver and create a session store
+    /// Join a room or accept an invite
+    Join {
+        /// Room ID (!abc:example.org) or alias (#ops:example.org)
+        room: OwnedRoomOrAliasId,
+    },
+    /// Log in and create the local session store
     Login {
+        /// Full Matrix ID, e.g. @bot:example.org
         user_id: OwnedUserId,
 
+        /// Password; visible in `ps` and shell history, so prefer stdin or the prompt
         #[arg(short, long, conflicts_with_all = ["qr", "sso"])]
         password: Option<String>,
 
@@ -78,73 +96,77 @@ enum Command {
         #[arg(long, requires = "sso")]
         idp: Option<String>,
 
+        /// Device name shown to other clients
         #[arg(short, long, default_value = CRATE_NAME)]
         device_name: String,
+
+        /// Homeserver URL; only needed if the server has no .well-known for it
+        #[arg(long, value_name = "URL")]
+        homeserver: Option<String>,
     },
-    /// Logout and delete all state
-    Logout {},
-    /// Dump messages of a room
+    /// Log out on the server and delete all local state
+    Logout,
+    /// Dump the latest messages of a room
     Messages {
-        #[arg(short, long, required = true)]
-        room_id: OwnedRoomId,
+        #[command(flatten)]
+        room: RoomArg,
 
-        /// Dump all event types
-        // #[arg(short, long)]
-        // all_types: bool,
-
-        /// Only request this number of events
+        /// Number of events to fetch
         #[arg(short, long, default_value = "10")]
         limit: u64,
     },
-    /// Redact a specific event
+    /// Redact (delete) an event
     Redact {
-        #[arg(short, long, required = true)]
-        room_id: OwnedRoomId,
+        #[command(flatten)]
+        room: RoomArg,
 
-        #[arg(short, long, required = true)]
+        /// ID of the event to redact
+        #[arg(short, long)]
         event_id: OwnedEventId,
 
+        /// Reason shown to other members
         #[arg(long)]
         reason: Option<String>,
     },
     /// Query room information
     Rooms {
-        /// Only query this room
-        #[arg(long)]
-        room_id: Option<OwnedRoomId>,
+        /// Only query this room (ID or alias)
+        #[arg(short, long, visible_alias = "room-id")]
+        room: Option<OwnedRoomOrAliasId>,
     },
-    /// Send a message to a room
+    /// Send a message or file to a room; prints the event ID
     Send {
-        #[arg(short, long, required = true)]
-        room_id: OwnedRoomId,
+        #[command(flatten)]
+        room: RoomArg,
 
-        /// Enable markdown formatting
-        #[arg(short, long)]
+        /// Render the message as Markdown
+        #[arg(short, long, conflicts_with = "attachment")]
         markdown: bool,
 
-        /// Send a notice message
+        /// Send as notice (m.notice, the convention for bots)
         #[arg(short, long)]
         notice: bool,
 
-        /// Send an emote message
+        /// Send as emote (/me)
         #[arg(short, long, conflicts_with = "notice")]
         emote: bool,
 
-        /// Send file as an attachment
-        #[arg(short, long, conflicts_with = "message")]
+        /// Send this file instead of a text message
+        #[arg(short, long, conflicts_with_all = ["message", "notice", "emote"])]
         attachment: Option<PathBuf>,
 
-        /// Reply to a specific event_id
+        /// Reply to this event ID
         #[arg(long, conflicts_with_all = ["notice", "emote", "attachment"])]
         reply_to: Option<OwnedEventId>,
 
-        /// String to send; read from stdin if omitted
+        /// Message text; read from stdin if omitted
         message: Option<String>,
     },
-    /// Run sync and print all events
+    /// Sync forever and print incoming timeline events as JSON lines
     Sync {
-        #[arg(long)]
-        room_id: Option<OwnedRoomId>,
+        /// Only print events of this room (ID or alias)
+        #[arg(short, long, visible_alias = "room-id")]
+        room: Option<OwnedRoomOrAliasId>,
 
         /// Mark all received messages as read
         #[arg(long)]
@@ -156,8 +178,8 @@ enum Command {
     },
     /// Send typing notifications
     Typing {
-        #[arg(long, required = true)]
-        room_id: OwnedRoomId,
+        #[command(flatten)]
+        room: RoomArg,
 
         /// Disable typing
         #[arg(long)]
@@ -228,9 +250,17 @@ async fn create_client(cmd: &Command) -> anyhow::Result<Client> {
         Command::Login {
             user_id,
             device_name,
+            homeserver,
             ..
-        } => Client::new(user_id.clone(), device_name.clone()).await,
-        Command::Clean { user_id } => Client::new(user_id.clone(), CRATE_NAME.to_string()).await,
+        } => {
+            if session::Meta::exists()? {
+                let current = session::Meta::load()
+                    .map(|m| m.user_id.to_string())
+                    .unwrap_or_else(|_| "another user".into());
+                bail!("already logged in as {current}; run `mn logout` first");
+            }
+            Client::new(user_id.clone(), device_name.clone(), homeserver.as_deref()).await
+        }
         _ => Client::from_meta().await?.ensure_logged_in(),
     }
 }
@@ -244,17 +274,29 @@ async fn main() -> anyhow::Result<()> {
     let sync_settings = SyncSettings::default()
         .filter(FilterDefinition::with_lazy_loading().into())
         .full_state(args.full_state)
-        .set_presence(args.presense);
+        .set_presence(args.presence);
 
     // Logs go to stderr so they never corrupt the JSON on stdout. `RUST_LOG`
     // wins if set, otherwise the verbosity flags decide the level.
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        tracing_subscriber::EnvFilter::new(args.verbose.tracing_level_filter().to_string())
+        let mut directives = args.verbose.tracing_level_filter().to_string();
+        // At the default level the SDK logs expected 404s (e.g. "Account
+        // data not found") as errors; real failures still reach us as `Err`.
+        if !args.verbose.is_present() {
+            directives.push_str(",matrix_sdk::http_client=off");
+        }
+        tracing_subscriber::EnvFilter::new(directives)
     });
     tracing_subscriber::fmt()
         .with_env_filter(env_filter)
         .with_writer(std::io::stderr)
+        .with_ansi(std::io::stderr().is_terminal())
         .init();
+
+    if let Command::Clean { user_id } = &args.command {
+        session::clean(user_id);
+        return Ok(());
+    }
 
     let client = create_client(&args.command).await?;
 
@@ -263,21 +305,17 @@ async fn main() -> anyhow::Result<()> {
     }
 
     match args.command {
-        Command::Clean { .. } => {
-            client.clean()?;
-        }
+        Command::Clean { .. } => unreachable!("handled before the client is built"),
         Command::Homeserver {
             force,
             include_token,
         } => {
             let token = if include_token {
                 if !force {
-                    eprintln!(
-                        "Refusing to print the access token without -f/--force.\n\
-                         Keep it secret: it grants full access to your account and must \
-                         never be published or stored as plaintext."
+                    bail!(
+                        "refusing to print the access token without -f/--force; \
+                         it grants full access to your account"
                     );
-                    std::process::exit(1);
                 }
                 client.access_token()
             } else {
@@ -293,7 +331,7 @@ async fn main() -> anyhow::Result<()> {
 
             let out = HomeserverOutput {
                 home_server: client.homeserver().to_string(),
-                user_id: client.user_id().unwrap().to_string(),
+                user_id: client.user_id().context("not logged in")?.to_string(),
                 token,
             };
 
@@ -306,13 +344,10 @@ async fn main() -> anyhow::Result<()> {
             qr,
             sso,
             idp,
+            ..
         } => {
             if client.logged_in() {
-                bail!("already logged in");
-            }
-
-            if session::Meta::exists()? {
-                bail!("meta exists");
+                bail!("{user_id} is already logged in; run `mn logout` first");
             }
 
             if sso {
@@ -339,17 +374,30 @@ async fn main() -> anyhow::Result<()> {
                 client.user_id(),
             );
 
+            // Let the SDK finish setting up backups/recovery for the new
+            // device; exiting mid-way logs spurious errors.
+            client
+                .encryption()
+                .wait_for_e2ee_initialization_tasks()
+                .await;
+
             session::Meta {
                 user_id,
                 device_name: Some(device_name),
+                homeserver: Some(client.homeserver().to_string()),
             }
             .dump()?;
         }
-        Command::Logout {} => {
+        Command::Join { room } => {
+            let joined = client.join(&room).await?;
+            println!("{}", serde_json::json!({ "room_id": joined.room_id() }));
+        }
+        Command::Logout => {
             client.logout().await?;
         }
-        Command::Messages { room_id, limit } => {
-            let msgs = client.messages(room_id, limit).await?;
+        Command::Messages { room, limit } => {
+            let room = client.joined_room(&room.room).await?;
+            let msgs = client.messages(&room, limit).await?;
             let events: Vec<Box<RawValue>> = msgs
                 .chunk
                 .into_iter()
@@ -359,11 +407,12 @@ async fn main() -> anyhow::Result<()> {
 
             println!("{}", serde_json::to_string(&events)?);
         }
-        Command::Rooms { room_id } => {
-            let out = match room_id {
-                Some(room_id) => {
+        Command::Rooms { room } => {
+            let out = match room {
+                Some(room) => {
+                    let room_id = client.resolve_room_id(&room).await?;
                     let Some(room) = client.get_room(&room_id) else {
-                        bail!("no such room: {}", room_id);
+                        bail!("unknown room: {room}");
                     };
                     let output = client.query_room(room).await?;
                     serde_json::to_string(&output)?
@@ -380,11 +429,11 @@ async fn main() -> anyhow::Result<()> {
             println!("{}", out);
         }
         Command::Redact {
-            room_id,
+            room,
             event_id,
             reason,
         } => {
-            let room = client.get_joined_room(room_id)?;
+            let room = client.joined_room(&room.room).await?;
             room.redact(&event_id, reason.as_deref(), None).await?;
         }
         Command::Verify { device } => match device {
@@ -427,7 +476,7 @@ async fn main() -> anyhow::Result<()> {
             }
         },
         Command::Send {
-            room_id,
+            room,
             reply_to,
             markdown,
             notice,
@@ -435,45 +484,50 @@ async fn main() -> anyhow::Result<()> {
             attachment,
             message,
         } => {
-            if let Some(path) = attachment {
-                return client.send_attachment(room_id, path).await;
-            }
+            let room = client.joined_room(&room.room).await?;
 
-            let body = match message {
-                Some(message) => message,
-                None => terminal::read_stdin_to_string()?,
-            };
-
-            if let Some(event_id) = &reply_to {
-                return client
-                    .send_message_reply(room_id, event_id, &body, markdown)
-                    .await;
-            }
-
-            let kind = if notice {
-                TextKind::Notice
-            } else if emote {
-                TextKind::Emote
+            let event_id = if let Some(path) = attachment {
+                client.send_attachment(&room, path).await?
             } else {
-                TextKind::Text
+                let body = match message {
+                    Some(message) => message,
+                    None => terminal::read_message()?,
+                };
+                anyhow::ensure!(!body.trim().is_empty(), "refusing to send an empty message");
+
+                if let Some(event_id) = &reply_to {
+                    client
+                        .send_message_reply(&room, event_id, &body, markdown)
+                        .await?
+                } else {
+                    let kind = if notice {
+                        TextKind::Notice
+                    } else if emote {
+                        TextKind::Emote
+                    } else {
+                        TextKind::Text
+                    };
+                    client.send_text(&room, &body, kind, markdown).await?
+                }
             };
-            client.send_text(room_id, &body, kind, markdown).await?;
+
+            println!(
+                "{}",
+                serde_json::json!({ "room_id": room.room_id(), "event_id": event_id })
+            );
         }
-        Command::Sync {
-            room_id,
-            receipt,
-            raw,
-        } => {
+        Command::Sync { room, receipt, raw } => {
             if raw {
                 let mut sync_stream = Box::pin(client.sync_stream(sync_settings.clone()).await);
-                while let Some(Ok(response)) = sync_stream.next().await {
-                    let resp: outputs::SyncResponse = response.into();
+                while let Some(response) = sync_stream.next().await {
+                    let resp: outputs::SyncResponse = response?.into();
                     println!("{}", serde_json::to_string(&resp)?);
                 }
             } else {
-                match &room_id {
-                    Some(room_id) => {
-                        client.add_room_event_handler(room_id, move |event, room| async move {
+                match &room {
+                    Some(room) => {
+                        let room_id = client.resolve_room_id(room).await?;
+                        client.add_room_event_handler(&room_id, move |event, room| async move {
                             on_room_message(event, room, receipt).await
                         });
                     }
@@ -487,8 +541,8 @@ async fn main() -> anyhow::Result<()> {
                 client.sync(sync_settings.clone()).await?;
             }
         }
-        Command::Typing { room_id, disable } => {
-            let room = client.get_joined_room(room_id)?;
+        Command::Typing { room, disable } => {
+            let room = client.joined_room(&room.room).await?;
             room.typing_notice(!disable).await?;
         }
         Command::Whoami => {
