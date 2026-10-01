@@ -1,7 +1,8 @@
 use std::env;
 use std::fs;
 use std::io;
-use std::os::unix::fs::PermissionsExt;
+use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
@@ -57,6 +58,21 @@ impl From<StoredSession> for AuthSession {
     }
 }
 
+/// Write `data` to `path` atomically, readable by the owner only from the
+/// first byte on: a temp file created with mode 0600, then renamed over the
+/// target. Concurrent readers see either the old or the new content.
+fn write_private(path: &Path, data: &[u8]) -> io::Result<()> {
+    let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&tmp)?;
+    file.write_all(data)?;
+    file.sync_all()?;
+    fs::rename(&tmp, path)
+}
+
 fn state_file(relative: impl AsRef<Path>) -> io::Result<PathBuf> {
     xdg::BaseDirectories::with_prefix(CRATE_NAME).place_state_file(relative)
 }
@@ -96,6 +112,15 @@ impl Persisted {
     }
 }
 
+/// The typical headless failure (no Secret Service on the session bus) reads
+/// "No default store has been set"; point at the way out.
+fn keyring_error(e: keyring::Error) -> anyhow::Error {
+    anyhow::Error::new(e).context(
+        "the system keyring (Secret Service) is not usable; on a headless machine \
+         set MN_NO_KEYRING=1 to keep the secrets in a 0600 file instead",
+    )
+}
+
 enum SessionStore {
     Keyring(keyring::Entry),
     File(PathBuf),
@@ -106,10 +131,8 @@ impl SessionStore {
         if env::var_os("MN_NO_KEYRING").is_some() {
             Ok(Self::File(session_json_path(user_id)?))
         } else {
-            Ok(Self::Keyring(keyring::Entry::new(
-                CRATE_NAME,
-                user_id.as_str(),
-            )?))
+            let entry = keyring::Entry::new(CRATE_NAME, user_id.as_str()).map_err(keyring_error)?;
+            Ok(Self::Keyring(entry))
         }
     }
 
@@ -118,7 +141,7 @@ impl SessionStore {
             Self::Keyring(entry) => match entry.get_password() {
                 Ok(raw) => raw,
                 Err(keyring::Error::NoEntry) => return Ok(None),
-                Err(e) => return Err(e.into()),
+                Err(e) => return Err(keyring_error(e)),
             },
             Self::File(path) => match fs::read_to_string(path) {
                 Ok(raw) => raw,
@@ -132,11 +155,8 @@ impl SessionStore {
     fn write(&self, persisted: &Persisted) -> anyhow::Result<()> {
         let json = serde_json::to_string(persisted)?;
         match self {
-            Self::Keyring(entry) => entry.set_password(&json)?,
-            Self::File(path) => {
-                fs::write(path, &json)?;
-                fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
-            }
+            Self::Keyring(entry) => entry.set_password(&json).map_err(keyring_error)?,
+            Self::File(path) => write_private(path, json.as_bytes())?,
         }
         Ok(())
     }
@@ -200,33 +220,35 @@ fn remove_meta() -> anyhow::Result<()> {
     Ok(())
 }
 
-impl super::Client {
-    fn session_store(&self) -> anyhow::Result<SessionStore> {
-        SessionStore::for_user(&self.user_id)
+/// Delete the session secrets, the state store and `meta.json` of `user_id`,
+/// logging (but not failing on) each individual error. Purely local: works
+/// offline and without a usable session.
+pub(crate) fn clean(user_id: &UserId) {
+    for (what, result) in [
+        (
+            "session",
+            SessionStore::for_user(user_id).and_then(|s| s.delete()),
+        ),
+        ("state store", remove_state_db(user_id)),
+        ("meta.json", remove_meta()),
+    ] {
+        if let Err(e) = result {
+            error!("delete {what}: {e:#}");
+        }
     }
+}
 
+impl super::Client {
     pub(super) fn persist_session(&self) -> anyhow::Result<()> {
         resave_session(&self.user_id, &self.inner)
     }
 
-    /// Delete the session, the state store and `meta.json`, logging (but not
-    /// failing on) each individual error.
-    pub(crate) fn clean(&self) -> anyhow::Result<()> {
-        for (what, result) in [
-            ("session", self.session_store().and_then(|s| s.delete())),
-            ("state store", remove_state_db(&self.user_id)),
-            ("meta.json", remove_meta()),
-        ] {
-            if let Err(e) = result {
-                error!("delete {what}: {e}");
-            }
-        }
-        Ok(())
-    }
-
     pub(crate) async fn logout(&self) -> anyhow::Result<()> {
-        self.inner.matrix_auth().logout().await?;
-        self.clean()
+        // Dispatches to the legacy Matrix or the OAuth 2.0 logout, depending
+        // on how we logged in (`matrix_auth()` alone fails for --qr sessions).
+        self.inner.logout().await?;
+        clean(&self.user_id);
+        Ok(())
     }
 }
 
@@ -234,6 +256,9 @@ impl super::Client {
 pub(crate) struct Meta {
     pub(crate) user_id: OwnedUserId,
     pub(crate) device_name: Option<String>,
+    /// Homeserver URL found at login, so later runs skip the discovery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) homeserver: Option<String>,
 }
 
 impl Meta {
@@ -250,5 +275,18 @@ impl Meta {
     pub(crate) fn dump(&self) -> anyhow::Result<()> {
         fs::write(meta_path()?, format!("{}\n", serde_json::to_string(self)?))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Meta;
+
+    #[test]
+    fn meta_without_homeserver_still_loads() {
+        let meta: Meta =
+            serde_json::from_str(r#"{"user_id":"@bot:example.org","device_name":null}"#).unwrap();
+        assert_eq!(meta.user_id, "@bot:example.org");
+        assert!(meta.homeserver.is_none());
     }
 }

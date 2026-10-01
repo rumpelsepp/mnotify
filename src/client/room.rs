@@ -2,15 +2,15 @@ use std::fs;
 use std::io::Cursor;
 use std::path::Path;
 
-use anyhow::anyhow;
+use anyhow::{Context, anyhow, bail};
 use image::{GenericImageView, ImageFormat};
-use matrix_sdk::RoomMemberships;
 use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseImageInfo, Thumbnail};
 use matrix_sdk::room::{Messages, MessagesOptions, Room};
 use matrix_sdk::ruma::events::room::message::{
     AddMentions, ForwardThread, RoomMessageEvent, RoomMessageEventContent,
 };
-use matrix_sdk::ruma::{EventId, RoomId, UInt};
+use matrix_sdk::ruma::{EventId, OwnedEventId, OwnedRoomId, RoomId, RoomOrAliasId, UInt};
+use matrix_sdk::{RoomMemberships, RoomState};
 
 /// Which flavour of `m.room.message` to send.
 #[derive(Debug, Clone, Copy)]
@@ -66,29 +66,48 @@ fn image_attachment_config(data: &[u8]) -> AttachmentConfig {
 }
 
 impl super::Client {
-    pub(crate) fn get_joined_room(&self, room_id: impl AsRef<RoomId>) -> anyhow::Result<Room> {
-        let room_id = room_id.as_ref();
-        self.inner
-            .get_room(room_id)
-            .ok_or_else(|| anyhow!("no such room: {room_id}"))
+    /// Resolve a room ID or alias to a room ID. An alias costs one request.
+    pub(crate) async fn resolve_room_id(
+        &self,
+        room: &RoomOrAliasId,
+    ) -> anyhow::Result<OwnedRoomId> {
+        match <&RoomId>::try_from(room) {
+            Ok(room_id) => Ok(room_id.to_owned()),
+            Err(alias) => Ok(self
+                .inner
+                .resolve_room_alias(alias)
+                .await
+                .with_context(|| format!("could not resolve room alias {alias}"))?
+                .room_id),
+        }
     }
 
-    pub(crate) async fn send_content(
-        &self,
-        room_id: impl AsRef<RoomId>,
-        content: RoomMessageEventContent,
-    ) -> anyhow::Result<()> {
-        self.get_joined_room(room_id)?.send(content).await?;
-        Ok(())
+    /// Look up a room we are a member of, with a hint on what to do if we are
+    /// not (yet).
+    pub(crate) async fn joined_room(&self, room: &RoomOrAliasId) -> anyhow::Result<Room> {
+        let room_id = self.resolve_room_id(room).await?;
+        let Some(joined) = self.inner.get_room(&room_id) else {
+            bail!("not a member of {room}; join it first: mn join '{room}'");
+        };
+        match joined.state() {
+            RoomState::Joined => Ok(joined),
+            RoomState::Invited => bail!("{room} is a pending invite; accept it: mn join '{room}'"),
+            state => bail!("not a member of {room} (state: {state:?}); join it: mn join '{room}'"),
+        }
+    }
+
+    /// Join a room by ID or alias; this also accepts a pending invite.
+    pub(crate) async fn join(&self, room: &RoomOrAliasId) -> anyhow::Result<Room> {
+        Ok(self.inner.join_room_by_id_or_alias(room, &[]).await?)
     }
 
     pub(crate) async fn send_text(
         &self,
-        room_id: impl AsRef<RoomId>,
+        room: &Room,
         body: &str,
         kind: TextKind,
         markdown: bool,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<OwnedEventId> {
         let content = match (kind, markdown) {
             (TextKind::Text, false) => RoomMessageEventContent::text_plain(body),
             (TextKind::Text, true) => RoomMessageEventContent::text_markdown(body),
@@ -97,17 +116,16 @@ impl super::Client {
             (TextKind::Emote, false) => RoomMessageEventContent::emote_plain(body),
             (TextKind::Emote, true) => RoomMessageEventContent::emote_markdown(body),
         };
-        self.send_content(room_id, content).await
+        Ok(room.send(content).await?.response.event_id)
     }
 
     pub(crate) async fn send_message_reply(
         &self,
-        room_id: impl AsRef<RoomId>,
+        room: &Room,
         event_id: &EventId,
         body: &str,
         markdown: bool,
-    ) -> anyhow::Result<()> {
-        let room = self.get_joined_room(&room_id)?;
+    ) -> anyhow::Result<OwnedEventId> {
         let replied_to = room
             .event(event_id, None)
             .await?
@@ -124,21 +142,21 @@ impl super::Client {
         }
         .make_reply_to(original, ForwardThread::Yes, AddMentions::No);
 
-        self.send_content(room_id, content).await
+        Ok(room.send(content).await?.response.event_id)
     }
 
     pub(crate) async fn send_attachment(
         &self,
-        room_id: impl AsRef<RoomId>,
+        room: &Room,
         path: impl AsRef<Path>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<OwnedEventId> {
         let path = path.as_ref();
         let file_name = path
             .file_name()
             .and_then(|s| s.to_str())
             .ok_or_else(|| anyhow!("invalid file name: {path:?}"))?;
+        let data = fs::read(path).with_context(|| format!("could not read {}", path.display()))?;
         let content_type = crate::mime::guess_mime(path)?;
-        let data = fs::read(path)?;
 
         let config = if content_type.type_() == mime::IMAGE {
             image_attachment_config(&data)
@@ -146,10 +164,10 @@ impl super::Client {
             AttachmentConfig::new()
         };
 
-        self.get_joined_room(room_id)?
+        Ok(room
             .send_attachment(file_name, &content_type, data, config)
-            .await?;
-        Ok(())
+            .await?
+            .event_id)
     }
 
     pub(crate) async fn query_room(&self, room: Room) -> anyhow::Result<crate::outputs::Room> {
@@ -183,12 +201,7 @@ impl super::Client {
         })
     }
 
-    pub(crate) async fn messages(
-        &self,
-        room_id: impl AsRef<RoomId>,
-        limit: u64,
-    ) -> anyhow::Result<Messages> {
-        let room = self.get_joined_room(room_id)?;
+    pub(crate) async fn messages(&self, room: &Room, limit: u64) -> anyhow::Result<Messages> {
         let mut options = MessagesOptions::backward();
         options.limit = limit.try_into()?;
         Ok(room.messages(options).await?)

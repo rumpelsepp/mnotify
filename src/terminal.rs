@@ -20,6 +20,17 @@ pub(crate) fn read_stdin_to_string() -> io::Result<String> {
     Ok(buf)
 }
 
+/// Read a message body from stdin. A trailing newline (as `echo` adds it) is
+/// dropped; on an interactive terminal a hint says how to finish the input.
+pub(crate) fn read_message() -> io::Result<String> {
+    if io::stdin().is_terminal() {
+        eprintln!("Reading the message from stdin; finish with Ctrl-D.");
+    }
+    let mut buf = read_stdin_to_string()?;
+    buf.truncate(buf.trim_end_matches(['\r', '\n']).len());
+    Ok(buf)
+}
+
 pub(crate) async fn confirm(question: &str) -> anyhow::Result<bool> {
     Confirmation::new(question)
         .default_positive(false)
