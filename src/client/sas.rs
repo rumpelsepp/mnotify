@@ -6,12 +6,8 @@ use matrix_sdk::{
     encryption::verification::{
         SasState, SasVerification, Verification, VerificationRequestState, format_emojis,
     },
-    ruma::events::{
-        key::verification::{
-            request::ToDeviceKeyVerificationRequestEvent,
-            start::{OriginalSyncKeyVerificationStartEvent, ToDeviceKeyVerificationStartEvent},
-        },
-        room::message::{MessageType, OriginalSyncRoomMessageEvent},
+    ruma::events::key::verification::{
+        request::ToDeviceKeyVerificationRequestEvent, start::ToDeviceKeyVerificationStartEvent,
     },
 };
 
@@ -125,9 +121,16 @@ impl super::Client {
         Ok(())
     }
 
+    /// React to verification requests from our own other devices (to-device
+    /// SAS). Requests from other users are ignored: under MSC4153 other users
+    /// are verified via their cross-signing identity, not device by device.
     pub(crate) async fn set_sas_handlers(&self) -> anyhow::Result<()> {
         self.inner.add_event_handler(
             |ev: ToDeviceKeyVerificationRequestEvent, client: MatrixClient| async move {
+                if client.user_id() != Some(&ev.sender) {
+                    warn!("ignoring a verification request from {}", ev.sender);
+                    return;
+                }
                 let Some(request) = client
                     .encryption()
                     .get_verification_request(&ev.sender, &ev.content.transaction_id)
@@ -145,41 +148,12 @@ impl super::Client {
 
         self.inner.add_event_handler(
             |ev: ToDeviceKeyVerificationStartEvent, client: MatrixClient| async move {
+                if client.user_id() != Some(&ev.sender) {
+                    return;
+                }
                 if let Some(Verification::SasV1(sas)) = client
                     .encryption()
                     .get_verification(&ev.sender, ev.content.transaction_id.as_str())
-                    .await
-                {
-                    tokio::spawn(sas_verification_handler(sas));
-                }
-            },
-        );
-
-        self.inner.add_event_handler(
-            |ev: OriginalSyncRoomMessageEvent, client: MatrixClient| async move {
-                if let MessageType::VerificationRequest(_) = &ev.content.msgtype {
-                    let Some(request) = client
-                        .encryption()
-                        .get_verification_request(&ev.sender, &ev.event_id)
-                        .await
-                    else {
-                        warn!("creating verification request failed");
-                        return;
-                    };
-
-                    let Ok(()) = request.accept().await else {
-                        warn!("can't accept verification request");
-                        return;
-                    };
-                }
-            },
-        );
-
-        self.inner.add_event_handler(
-            |ev: OriginalSyncKeyVerificationStartEvent, client: MatrixClient| async move {
-                if let Some(Verification::SasV1(sas)) = client
-                    .encryption()
-                    .get_verification(&ev.sender, ev.content.relates_to.event_id.as_str())
                     .await
                 {
                     tokio::spawn(sas_verification_handler(sas));

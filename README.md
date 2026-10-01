@@ -55,9 +55,9 @@ password:
 warning: no system keyring in use; the access token and the store passphrase are kept in plain text in ~/.local/state/mnotify/@backupbot:example.org/session.json (mode 0600). Anyone who can read this file can act as @backupbot:example.org.
 ```
 
-The password can also come from stdin (`mn login … < pwfile`), which is what
-you want in provisioning scripts. Avoid `-p`: it ends up in `ps` and your shell
-history.
+In provisioning scripts, pass the password on stdin (`mn login … < pwfile`).
+There is deliberately no command-line option for it: it would end up in `ps`
+and the shell history.
 
 **3. Invite the bot** to your room in Element, then accept the invite on the
 server. Aliases and room IDs both work everywhere:
@@ -121,14 +121,17 @@ $ mn login @user:example.org --homeserver https://matrix.example.org
 Only one account is logged in at a time; `mn logout` ends the session on the
 server and deletes all local state.
 
+Logins made with older `mn` versions are not migrated: `mn` asks you to remove
+them with `mn clean @user:example.org` and to log in again.
+
 ### Password
 
 ```
 $ mn login @user:example.org
 ```
 
-Without `-p`, `mn` reads the password interactively, or from stdin when it is
-not a terminal.
+`mn` reads the password interactively, or from stdin when it is not a
+terminal.
 
 ### QR code (OAuth 2.0 / MAS homeservers)
 

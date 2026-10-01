@@ -50,14 +50,18 @@ fn send_requires_a_room() {
 
 #[test]
 fn login_methods_are_mutually_exclusive() {
-    for extra in [["--qr"].as_slice(), ["--sso"].as_slice()] {
-        let mut cmd = mn();
-        cmd.args(["login", "@user:example.org", "--password", "hunter2"])
-            .args(extra)
-            .assert()
-            .failure()
-            .stderr(predicate::str::contains("cannot be used with"));
-    }
+    mn().args(["login", "@user:example.org", "--qr", "--sso"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
+fn passwords_are_not_taken_from_the_command_line() {
+    mn().args(["login", "@user:example.org", "--password", "hunter2"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unexpected argument"));
 }
 
 #[test]
@@ -71,9 +75,7 @@ fn idp_requires_sso() {
 #[test]
 fn send_accepts_ids_and_aliases_and_mn_room() {
     mn().args(["send", "--help"]).assert().success().stdout(
-        predicate::str::contains("#ops:example.org")
-            .and(predicate::str::contains("MN_ROOM"))
-            .and(predicate::str::contains("--room-id")),
+        predicate::str::contains("#ops:example.org").and(predicate::str::contains("MN_ROOM")),
     );
 }
 
@@ -92,13 +94,6 @@ fn attachment_cannot_be_a_notice() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("cannot be used with"));
-}
-
-#[test]
-fn old_presense_spelling_still_parses() {
-    mn().args(["--presense", "offline", "--help"])
-        .assert()
-        .success();
 }
 
 /// Point all state at an empty temp dir so nothing real is touched.

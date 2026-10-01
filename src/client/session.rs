@@ -291,15 +291,12 @@ impl super::Client {
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Meta {
     pub(crate) user_id: OwnedUserId,
-    pub(crate) device_name: Option<String>,
+    pub(crate) device_name: String,
     /// Homeserver URL found at login, so later runs skip the discovery.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) homeserver: Option<String>,
+    pub(crate) homeserver: String,
     /// Whether this login syncs via sliding sync. Fixed at login: both APIs
     /// keep their to-device token in the same place in the crypto store, and
-    /// a token of the one is rejected by the other. Logins from before this
-    /// field existed use `/v3/sync`.
-    #[serde(default)]
+    /// a token of the one is rejected by the other.
     pub(crate) sliding_sync: bool,
 }
 
@@ -310,8 +307,17 @@ impl Meta {
 
     pub(crate) fn load() -> anyhow::Result<Self> {
         let raw = fs::read_to_string(meta_path()?)?;
-        anyhow::ensure!(!raw.trim().is_empty(), "meta.json is empty");
-        Ok(serde_json::from_str(&raw)?)
+        serde_json::from_str(&raw).map_err(|e| {
+            // Most likely written by an older mn, which lacked some fields.
+            let user = serde_json::from_str::<serde_json::Value>(&raw)
+                .ok()
+                .and_then(|v| v["user_id"].as_str().map(str::to_owned))
+                .unwrap_or_else(|| "@user:example.org".to_owned());
+            anyhow::anyhow!(
+                "unsupported meta.json ({e}), probably from an older mn; \
+                 remove the login with `mn clean {user}` and log in again"
+            )
+        })
     }
 
     pub(crate) fn dump(&self) -> anyhow::Result<()> {
@@ -325,11 +331,8 @@ mod tests {
     use super::Meta;
 
     #[test]
-    fn meta_without_homeserver_still_loads() {
-        let meta: Meta =
-            serde_json::from_str(r#"{"user_id":"@bot:example.org","device_name":null}"#).unwrap();
-        assert_eq!(meta.user_id, "@bot:example.org");
-        assert!(meta.homeserver.is_none());
-        assert!(!meta.sliding_sync, "old logins must stay on /v3/sync");
+    fn meta_from_older_versions_is_rejected() {
+        let old = r#"{"user_id":"@bot:example.org","device_name":null}"#;
+        assert!(serde_json::from_str::<Meta>(old).is_err());
     }
 }
