@@ -151,3 +151,21 @@ fn falls_back_to_a_private_file_without_keyring() {
     let mode = std::fs::metadata(&session).unwrap().permissions().mode();
     assert_eq!(mode & 0o777, 0o600);
 }
+
+#[test]
+fn thread_and_reply_are_exclusive() {
+    let event = "$abc:example.org";
+    mn().args(["send", "-r", "#ops:example.org", "--thread", event])
+        .args(["--reply-to", event, "hi"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
+fn messages_can_read_a_thread() {
+    mn().args(["messages", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--thread"));
+}

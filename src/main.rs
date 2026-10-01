@@ -22,7 +22,7 @@ mod terminal;
 
 use crate::client::recovery::NOT_CROSS_SIGNED;
 use crate::client::sync::Scope;
-use crate::client::{Client, TextKind, session};
+use crate::client::{Client, Relation, TextKind, session};
 
 const CRATE_NAME: &str = clap::crate_name!();
 
@@ -110,6 +110,10 @@ enum Command {
         /// Number of events to fetch
         #[arg(short, long, default_value = "10")]
         limit: u64,
+
+        /// Only this thread: the event that started it, then the latest replies
+        #[arg(long, value_name = "EVENT_ID")]
+        thread: Option<OwnedEventId>,
     },
     /// Redact (delete) an event
     Redact {
@@ -151,9 +155,13 @@ enum Command {
         #[arg(short, long, conflicts_with_all = ["message", "notice", "emote"])]
         attachment: Option<PathBuf>,
 
-        /// Reply to this event ID
-        #[arg(long, conflicts_with_all = ["notice", "emote", "attachment"])]
+        /// Reply to this event; stays in its thread if it is in one
+        #[arg(long, value_name = "EVENT_ID")]
         reply_to: Option<OwnedEventId>,
+
+        /// Post into the thread of this event, starting one if there is none
+        #[arg(long, value_name = "EVENT_ID", conflicts_with = "reply_to")]
+        thread: Option<OwnedEventId>,
 
         /// Message text; read from stdin if omitted
         message: Option<String>,
@@ -448,16 +456,20 @@ async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> 
         Command::Logout => {
             client.logout().await?;
         }
-        Command::Messages { room, limit } => {
+        Command::Messages {
+            room,
+            limit,
+            thread,
+        } => {
             let room = client.joined_room(&room.room).await?;
-            let msgs = client.messages(&room, limit).await?;
-            let events: Vec<Box<RawValue>> = msgs
-                .chunk
+            let events = match thread {
+                Some(root) => client.thread(&room, &root, limit).await?,
+                None => client.messages(&room, limit).await?,
+            };
+            let events: Vec<Box<RawValue>> = events
                 .into_iter()
                 .map(|e| e.into_raw().into_json())
-                .rev()
                 .collect();
-
             println!("{}", serde_json::to_string(&events)?);
         }
         Command::Rooms { room } => {
@@ -529,6 +541,7 @@ async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> 
         Command::Send {
             room,
             reply_to,
+            thread,
             markdown,
             notice,
             emote,
@@ -542,8 +555,11 @@ async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> 
                 "{NOT_CROSS_SIGNED}"
             );
 
+            let relation = reply_to
+                .map(Relation::Reply)
+                .or(thread.map(Relation::Thread));
             let event_id = if let Some(path) = attachment {
-                client.send_attachment(&room, path).await?
+                client.send_attachment(&room, path, relation).await?
             } else {
                 let body = match message {
                     Some(message) => message,
@@ -551,20 +567,16 @@ async fn run(command: Command, client: &Client, sync_settings: SyncSettings) -> 
                 };
                 anyhow::ensure!(!body.trim().is_empty(), "refusing to send an empty message");
 
-                if let Some(event_id) = &reply_to {
-                    client
-                        .send_message_reply(&room, event_id, &body, markdown)
-                        .await?
+                let kind = if notice {
+                    TextKind::Notice
+                } else if emote {
+                    TextKind::Emote
                 } else {
-                    let kind = if notice {
-                        TextKind::Notice
-                    } else if emote {
-                        TextKind::Emote
-                    } else {
-                        TextKind::Text
-                    };
-                    client.send_text(&room, &body, kind, markdown).await?
-                }
+                    TextKind::Text
+                };
+                client
+                    .send_text(&room, &body, kind, markdown, relation)
+                    .await?
             };
 
             println!(
