@@ -14,7 +14,7 @@ use rand::distr::{Alphanumeric, SampleString};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error};
 
-use super::CRATE_NAME;
+use super::profile;
 
 /// A persisted Matrix session, from either authentication API. `OAuthSession`
 /// itself is not `Serialize`, so its two parts are stored separately.
@@ -73,8 +73,10 @@ fn write_private(path: &Path, data: &[u8]) -> io::Result<()> {
     fs::rename(&tmp, path)
 }
 
+/// A path in the state directory of the selected profile, creating its
+/// parent directories.
 pub(super) fn state_file(relative: impl AsRef<Path>) -> io::Result<PathBuf> {
-    xdg::BaseDirectories::with_prefix(CRATE_NAME).place_state_file(relative)
+    profile::dirs().place_state_file(relative)
 }
 
 fn session_json_path(user_id: &UserId) -> io::Result<PathBuf> {
@@ -86,10 +88,7 @@ pub(crate) fn state_db_path(user_id: &UserId) -> io::Result<PathBuf> {
 }
 
 pub(crate) fn meta_path() -> io::Result<PathBuf> {
-    match env::var_os("MN_META_FILE") {
-        Some(path) => Ok(path.into()),
-        None => state_file("meta.json"),
-    }
+    state_file("meta.json")
 }
 
 /// Everything that has to survive between invocations and must stay secret: the
@@ -120,7 +119,7 @@ fn keyring_error(e: keyring::Error) -> anyhow::Error {
 /// store initialises (fails without a session bus, i.e. on most servers) and
 /// a lookup does not fail (fails without a running Secret Service).
 fn usable_keyring_entry(user_id: &UserId) -> keyring::Result<keyring::Entry> {
-    let entry = keyring::Entry::new(CRATE_NAME, user_id.as_str())?;
+    let entry = keyring::Entry::new(&profile::keyring_service(), user_id.as_str())?;
     match entry.get_password() {
         Ok(_) | Err(keyring::Error::NoEntry) => Ok(entry),
         Err(e) => Err(e),

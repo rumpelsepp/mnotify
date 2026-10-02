@@ -14,8 +14,9 @@ use super::session::state_file;
 /// an info message: the other process may be a `mn sync` that never ends.
 const WARN_AFTER: Duration = Duration::from_secs(10);
 
-/// An exclusive lock on the local state of one account, held until dropped
-/// (i.e. until the process exits).
+/// An exclusive lock on the local state of one account in the selected
+/// profile, held until dropped (i.e. until the process exits). Other profiles,
+/// even of the same account, have their own store and lock.
 ///
 /// The crypto store must not be used by two processes at once: each one
 /// loads the Olm sessions into memory, and two of them encrypting with the
@@ -23,7 +24,7 @@ const WARN_AFTER: Duration = Duration::from_secs(10);
 /// receiver can decrypt only the first; the room key in the second is lost
 /// and every message encrypted with it stays undecryptable. matrix-sdk's
 /// cross-process store lock covers only a few code paths, so concurrent `mn`
-/// invocations of the same account are serialized as a whole instead.
+/// invocations on the same store are serialized as a whole instead.
 pub(crate) struct AccountLock {
     _file: File,
 }

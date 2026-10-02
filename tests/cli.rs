@@ -100,7 +100,7 @@ fn attachment_cannot_be_a_notice() {
 fn isolated(dir: &std::path::Path) -> Command {
     let mut cmd = mn();
     cmd.env("XDG_STATE_HOME", dir)
-        .env_remove("MN_META_FILE")
+        .env_remove("MN_PROFILE")
         .env_remove("MN_ROOM")
         .env("MN_NO_KEYRING", "1");
     cmd
@@ -147,9 +147,65 @@ fn falls_back_to_a_private_file_without_keyring() {
         .assert()
         .failure(); // the homeserver does not exist, but the secrets file is set up first
 
-    let session = dir.join("mnotify/@bot:mn-test.invalid/session.json");
+    let session = dir.join("mnotify/default/@bot:mn-test.invalid/session.json");
     let mode = std::fs::metadata(&session).unwrap().permissions().mode();
     assert_eq!(mode & 0o777, 0o600);
+}
+
+#[test]
+fn profile_keeps_its_state_in_its_own_directory() {
+    let dir = temp_dir("profile");
+    isolated(&dir)
+        .args(["-p", "work", "login", "@bot:mn-test.invalid"])
+        .write_stdin("hunter2\n")
+        .timeout(std::time::Duration::from_secs(60))
+        .assert()
+        .failure(); // as above: the homeserver does not exist
+
+    assert!(
+        dir.join("mnotify/work/@bot:mn-test.invalid/session.json")
+            .exists()
+    );
+    assert!(!dir.join("mnotify/default").exists());
+}
+
+#[test]
+fn invalid_profile_names_are_rejected() {
+    for name in ["../x", "@bot:example.org", ".hidden", ""] {
+        mn().args(["-p", name, "whoami"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("--profile"));
+    }
+}
+
+#[test]
+fn state_from_before_profiles_moves_into_default() {
+    let dir = temp_dir("migrate");
+    let root = dir.join("mnotify");
+    std::fs::create_dir_all(root.join("@bot:example.org/store")).unwrap();
+    std::fs::write(root.join("@bot:example.org/session.json"), "{}").unwrap();
+    std::fs::write(root.join("meta.json"), "{}").unwrap();
+
+    // Any command migrates; this one only touches the (empty) profile "other".
+    isolated(&dir)
+        .args(["-p", "other", "clean", "@nobody:invalid.example"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("moved the local state"));
+
+    assert!(!root.join("meta.json").exists());
+    assert!(!root.join("@bot:example.org").exists());
+    assert!(root.join("default/meta.json").exists());
+    assert!(root.join("default/@bot:example.org/session.json").exists());
+    assert!(root.join("default/@bot:example.org/store").is_dir());
+
+    // Nothing left to do the second time.
+    isolated(&dir)
+        .args(["-p", "other", "clean", "@nobody:invalid.example"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("moved the local state").not());
 }
 
 #[test]

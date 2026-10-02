@@ -60,7 +60,7 @@ setup() {
 
     run mn_on a1 clean "$alice"
     assert_success
-    assert [ ! -e "$BATS_TEST_TMPDIR/a1/mnotify/meta.json" ]
+    assert [ ! -e "$BATS_TEST_TMPDIR/a1/mnotify/default/meta.json" ]
 
     run mn_on a1 whoami
     assert_failure
@@ -70,7 +70,7 @@ setup() {
     alice=$(new_user alice)
     login a1 "$alice"
 
-    run stat --format %a "$BATS_TEST_TMPDIR/a1/mnotify/$alice/session.json"
+    run stat --format %a "$BATS_TEST_TMPDIR/a1/mnotify/default/$alice/session.json"
     assert_output 600
 }
 

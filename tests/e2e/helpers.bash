@@ -40,7 +40,7 @@ mn_on() {
         vars+=("$1")
         shift
     done
-    env -u MN_ROOM -u MN_META_FILE -u RUST_BACKTRACE -u RUST_LOG \
+    env -u MN_ROOM -u MN_PROFILE -u RUST_BACKTRACE -u RUST_LOG \
         XDG_STATE_HOME="$BATS_TEST_TMPDIR/$device" MN_NO_KEYRING=1 "${vars[@]}" \
         timeout "$E2E_TIMEOUT" "$MN" "$@"
 }
