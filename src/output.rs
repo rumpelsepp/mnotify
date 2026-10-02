@@ -254,6 +254,13 @@ pub(crate) fn event_line(event: &RawValue, unproven: bool) -> String {
         (Some("m.room.message"), Some("m.image" | "m.file" | "m.audio" | "m.video")) => {
             format!("[file] {body}")
         }
+        // Redacted: the content is gone, also the ciphertext of an encrypted
+        // event, so there is nothing left to decrypt.
+        (Some("m.room.message" | "m.room.encrypted"), _)
+            if !event["unsigned"]["redacted_because"].is_null() =>
+        {
+            "[deleted]".to_owned()
+        }
         (Some("m.room.message"), _) if content.get("body").is_some() => body.to_owned(),
         (Some("m.room.message"), _) => "[deleted]".to_owned(),
         (Some("m.room.encrypted"), _) => "[unable to decrypt]".to_owned(),
@@ -322,7 +329,12 @@ mod tests {
 
         let mut encrypted = message(serde_json::json!({}));
         encrypted["type"] = "m.room.encrypted".into();
-        assert!(line(encrypted).ends_with("[unable to decrypt]"));
+        assert!(line(encrypted.clone()).ends_with("[unable to decrypt]"));
+
+        encrypted["unsigned"] =
+            serde_json::json!({"redacted_because": {"type": "m.room.redaction"}});
+        let redacted = line(encrypted);
+        assert!(redacted.ends_with("  [deleted]"), "{redacted}");
 
         let raw = RawValue::from_string(
             message(serde_json::json!({"msgtype": "m.text", "body": "old"})).to_string(),
