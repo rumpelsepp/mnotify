@@ -21,6 +21,7 @@ use matrix_sdk::sliding_sync::{
     SlidingSync, SlidingSyncBuilder, SlidingSyncList, SlidingSyncListLoadingState, SlidingSyncMode,
     Version,
 };
+use rand::distr::{Alphanumeric, SampleString};
 use tracing::debug;
 
 /// Which rooms a sync has to cover.
@@ -138,8 +139,15 @@ impl super::Client {
 
         // A fresh connection per invocation, so concurrent processes never
         // fight over a shared `pos`; the SDK persists the to-device token.
+        // The server keys connections by device and `conn_id`, so the ID has
+        // to differ too: with a fixed one, each new process resets the
+        // connection of the others, which then fail with M_UNKNOWN_POS.
+        let conn_id = format!(
+            "mn-once-{}",
+            Alphanumeric.sample_string(&mut rand::rng(), 8)
+        );
         let mut builder = self
-            .sliding_sync_builder("mn-once")?
+            .sliding_sync_builder(&conn_id)?
             .poll_timeout(Duration::ZERO);
         if let Scope::AllRooms = scope {
             builder = builder.add_list(all_rooms_list(0));
