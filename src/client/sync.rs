@@ -13,6 +13,7 @@ use std::env;
 use std::time::Duration;
 
 use futures::StreamExt;
+use matrix_sdk::RoomState;
 use matrix_sdk::config::SyncSettings;
 use matrix_sdk::ruma::api::client::sync::sync_events::v5 as http;
 use matrix_sdk::ruma::events::StateEventType;
@@ -189,7 +190,13 @@ impl super::Client {
         let Scope::Room(room_id) = scope else {
             return Ok(false);
         };
-        let Some(room) = self.inner.get_room(room_id) else {
+        // Only members may load the member list; for an invite the server
+        // refuses, and the command itself says what is wrong.
+        let Some(room) = self
+            .inner
+            .get_room(room_id)
+            .filter(|room| room.state() == RoomState::Joined)
+        else {
             return Ok(false);
         };
         if !room.latest_encryption_state().await?.is_encrypted() {
