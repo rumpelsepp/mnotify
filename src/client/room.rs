@@ -10,6 +10,7 @@ use matrix_sdk::deserialized_responses::{TimelineEvent, TimelineEventKind, Unabl
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk::room::{IncludeRelations, MessagesOptions, RelationsOptions, Room};
 use matrix_sdk::ruma::api::client::room::create_room::{self, v3::RoomPreset};
+use matrix_sdk::ruma::api::client::typing::create_typing_event::{self, v3::Typing};
 use matrix_sdk::ruma::events::relation::RelationType;
 use matrix_sdk::ruma::events::room::encryption::RoomEncryptionEventContent;
 use matrix_sdk::ruma::events::room::message::{
@@ -203,6 +204,23 @@ impl super::Client {
             .send_attachment(file_name, &content_type, data, config)
             .await?
             .event_id)
+    }
+
+    /// Show or hide the typing indicator. Not `Room::typing_notice` alone:
+    /// it only sends "stopped typing" if this process announced typing
+    /// before, which a fresh `mn typing --disable` never did.
+    pub(crate) async fn set_typing(&self, room: &Room, typing: bool) -> anyhow::Result<()> {
+        if typing {
+            room.typing_notice(true).await?;
+        } else {
+            let request = create_typing_event::v3::Request::new(
+                self.user_id.clone(),
+                room.room_id().to_owned(),
+                Typing::No,
+            );
+            self.inner.send(request).await?;
+        }
+        Ok(())
     }
 
     pub(crate) async fn query_room(&self, room: Room) -> anyhow::Result<crate::output::Room> {
