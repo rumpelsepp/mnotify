@@ -180,5 +180,7 @@ fn mentions_need_full_user_ids() {
 
 #[test]
 fn json_flag_works_after_the_subcommand() {
-    mn().args(["rooms", "--json", "--help"]).assert().success();
+    mn().args(["room", "list", "--json", "--help"])
+        .assert()
+        .success();
 }
