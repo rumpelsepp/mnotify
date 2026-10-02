@@ -1,0 +1,30 @@
+
+# --- e2e overrides (appended to the generated homeserver.yaml) ---
+enable_registration: false
+# The suite logs in, sends and uploads keys far faster than a human; the
+# default rate limits would throttle it.
+rc_message: {per_second: 1000, burst_count: 1000}
+rc_registration: {per_second: 1000, burst_count: 1000}
+rc_login:
+  address: {per_second: 1000, burst_count: 1000}
+  account: {per_second: 1000, burst_count: 1000}
+  failed_attempts: {per_second: 1000, burst_count: 1000}
+rc_joins:
+  local: {per_second: 1000, burst_count: 1000}
+rc_invites:
+  per_room: {per_second: 1000, burst_count: 1000}
+  per_user: {per_second: 1000, burst_count: 1000}
+rc_key_requests: {per_second: 1000, burst_count: 1000}
+rc_room_creation: {per_second: 1000, burst_count: 1000}
+rc_media_create: {per_second: 1000, burst_count: 1000}
+# Replaces the generated listener (YAML: the last key wins): IPv4 only, as
+# containers without IPv6 cannot bind "::".
+listeners:
+  - port: 8008
+    type: http
+    tls: false
+    bind_addresses: ["0.0.0.0"]
+    x_forwarded: true
+    resources:
+      - names: [client, federation]
+        compress: false

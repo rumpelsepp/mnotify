@@ -267,6 +267,29 @@ build: a debug build is large (see
 open the encrypted store on every invocation. TLS is always
 [rustls](https://github.com/rustls/rustls).
 
+### Tests
+
+The [justfile](justfile) has the common entry points (`just` lists them):
+
+```
+$ just lint       # cargo fmt --check, clippy
+$ just test       # unit and CLI tests
+$ just e2e        # build, start Synapse, run the e2e suite twice, stop Synapse
+$ just ci         # all of the above
+```
+
+`tests/e2e` holds a [bats](https://bats-core.readthedocs.io/) suite that runs
+the release binary against a throwaway Synapse in a podman container
+(`PODMAN=docker` works too). It needs `bats`, `bats-assert`, `bats-support`,
+`jq`, `curl` and [`uv`](https://docs.astral.sh/uv/) (test users are created
+with [synadm](https://codeberg.org/synadm/synadm) via `uvx`). It runs once
+with sliding sync and once with `/v3/sync`; while Synapse is up
+(`just synapse-up`), `just e2e-run v3 tests/e2e/rooms.bats` runs a single
+file.
+
+Every test creates its own users and keeps each device's state in its own
+temporary `XDG_STATE_HOME`, so all tests share one homeserver but no state.
+
 ### Environment Variables
 
 #### `MN_ROOM`
