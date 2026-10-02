@@ -297,10 +297,12 @@ the release binary against a throwaway Synapse in a podman container
 `jq`, `curl` and [`uv`](https://docs.astral.sh/uv/) (test users are created
 with [synadm](https://codeberg.org/synadm/synadm) via `uvx`). It runs once
 with sliding sync and once with `/v3/sync`; while Synapse is up
-(`just synapse-up`), `just e2e-run v3 tests/e2e/rooms.bats` runs a single
-file.
+(`just synapse-up`), `just e2e-run v3 tests/e2e/room-create.bats` runs a
+single file.
 
-Every test creates its own users and keeps each device's state in its own
+There is one file per command, named after it (`mn room create` is
+`room-create.bats`); `mn-*.bats` cover what applies to all commands
+(`--json`, profiles, concurrent invocations, other global options). Every test creates its own users and keeps each device's state in its own
 temporary `XDG_STATE_HOME`, so all tests share one homeserver but no state.
 
 ### Concurrent invocations
@@ -309,7 +311,7 @@ Only one `mn` process per profile and account runs at a time; others wait
 until it exits. Each process keeps the account's Olm sessions in memory, and two of
 them encrypting with the same session at once make the receiver lose room
 keys, i.e. messages it can never decrypt. Overlapping cron jobs or a burst of
-`mn send` from a script are therefore serialized; with `-v`, a waiting process
+`mn send` from a script are therefore serialized; with `-vv`, a waiting process
 logs the PID it waits for, and after ten seconds it warns anyway.
 
 `mn sync` and `mn verify` hold the lock for as long as they run, so a script
