@@ -73,7 +73,7 @@ fn write_private(path: &Path, data: &[u8]) -> io::Result<()> {
     fs::rename(&tmp, path)
 }
 
-fn state_file(relative: impl AsRef<Path>) -> io::Result<PathBuf> {
+pub(super) fn state_file(relative: impl AsRef<Path>) -> io::Result<PathBuf> {
     xdg::BaseDirectories::with_prefix(CRATE_NAME).place_state_file(relative)
 }
 

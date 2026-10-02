@@ -38,7 +38,7 @@ On top of that, the parts that matter for automation: JSON on stdout, room
 aliases everywhere, `--json` output, Markdown, notices, emotes, replies, mentions that ping
 people's phones, file and image
 attachments with thumbnails, redactions, reading via `messages` and `sync`,
-safe concurrent invocations, and secrets in the system keyring or a `0600` file.
+concurrent invocations that queue up instead of corrupting each other, and secrets in the system keyring or a `0600` file.
 
 ## Showcase: alerts from a headless server in five minutes
 
@@ -289,6 +289,20 @@ file.
 
 Every test creates its own users and keeps each device's state in its own
 temporary `XDG_STATE_HOME`, so all tests share one homeserver but no state.
+
+### Concurrent invocations
+
+Only one `mn` process per account runs at a time; others wait until it
+exits. Each process keeps the account's Olm sessions in memory, and two of
+them encrypting with the same session at once make the receiver lose room
+keys, i.e. messages it can never decrypt. Overlapping cron jobs or a burst of
+`mn send` from a script are therefore serialized; with `-v`, a waiting process
+logs the PID it waits for, and after ten seconds it warns anyway.
+
+`mn sync` and `mn verify` hold the lock for as long as they run, so a script
+that reacts to `mn sync` output with `mn send` on the same account blocks. Log
+in a second device for the sender in its own state directory
+(`XDG_STATE_HOME=... mn login ...`) instead.
 
 ### Environment Variables
 

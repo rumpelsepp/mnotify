@@ -10,6 +10,7 @@ use matrix_sdk_crypto::{CollectStrategy, DecryptionSettings, TrustRequirement};
 
 use crate::CRATE_NAME;
 
+pub mod lock;
 pub mod login;
 pub mod recovery;
 pub mod room;
@@ -21,6 +22,8 @@ pub(crate) use room::{Addressing, NewRoom, Relation, TextKind};
 
 pub(crate) struct Client {
     inner: MatrixClient,
+    /// Held for the client's whole lifetime, see `AccountLock`.
+    _lock: lock::AccountLock,
     user_id: OwnedUserId,
     device_name: String,
     /// Sync via sliding sync instead of `/v3/sync`, see `Meta::sliding_sync`.
@@ -36,6 +39,7 @@ impl Client {
         device_name: String,
         homeserver: Option<&str>,
     ) -> anyhow::Result<Self> {
+        let lock = lock::AccountLock::acquire(&user_id).await?;
         let persisted = session::load_or_init(&user_id)?;
 
         // Several `mn` processes may share the store (e.g. overlapping cron
@@ -77,6 +81,7 @@ impl Client {
 
         let client = Self {
             inner: builder.build().await?,
+            _lock: lock,
             user_id,
             device_name,
             sliding_sync: false,
