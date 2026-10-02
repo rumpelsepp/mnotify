@@ -327,7 +327,66 @@ impl Meta {
 
 #[cfg(test)]
 mod tests {
-    use super::Meta;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::{Meta, Persisted, StoredSession, write_private};
+
+    /// The secrets as `mn` stores them in the keyring or `session.json`. A
+    /// change of this format (e.g. by a matrix-sdk update) locks every
+    /// existing login out of its encrypted store, so it is pinned here.
+    const MATRIX_SECRETS: &str = r#"{"session":{"Matrix":{"user_id":"@bot:example.org","device_id":"DEVICE","access_token":"at","refresh_token":"rt"}},"store_passphrase":"pass"}"#;
+    const OAUTH_SECRETS: &str = r#"{"session":{"OAuth":{"client_id":"client","user":{"user_id":"@bot:example.org","device_id":"DEVICE","access_token":"at"}}},"store_passphrase":"pass"}"#;
+
+    #[test]
+    fn stored_secrets_format_is_stable() {
+        for stored in [MATRIX_SECRETS, OAUTH_SECRETS] {
+            let persisted: Persisted = serde_json::from_str(stored).unwrap();
+            assert_eq!(persisted.store_passphrase, "pass");
+            let tokens = persisted.session.as_ref().unwrap().tokens();
+            assert_eq!(tokens.access_token, "at");
+            assert_eq!(serde_json::to_string(&persisted).unwrap(), stored);
+        }
+
+        let Some(StoredSession::Matrix(session)) =
+            serde_json::from_str::<Persisted>(MATRIX_SECRETS)
+                .unwrap()
+                .session
+        else {
+            panic!("not a Matrix session");
+        };
+        assert_eq!(session.tokens.refresh_token.as_deref(), Some("rt"));
+    }
+
+    #[test]
+    fn secrets_before_the_first_login_have_no_session() {
+        // Written by `load_or_init` before the login completes.
+        let fresh = Persisted::fresh();
+        let json = serde_json::to_string(&fresh).unwrap();
+        assert!(!json.contains("session\""), "{json}");
+
+        let read: Persisted = serde_json::from_str(&json).unwrap();
+        assert!(read.session.is_none());
+        assert_eq!(read.store_passphrase, fresh.store_passphrase);
+        assert_eq!(read.store_passphrase.len(), 32);
+        assert_ne!(read.store_passphrase, Persisted::fresh().store_passphrase);
+    }
+
+    #[test]
+    fn private_files_are_owner_only_and_replaced_whole() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.json");
+        fs::write(&path, "an older and longer content").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+
+        write_private(&path, b"new").unwrap();
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), "new");
+        let mode = fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+        // No temp file is left behind next to it.
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
 
     #[test]
     fn meta_from_older_versions_is_rejected() {

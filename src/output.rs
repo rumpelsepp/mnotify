@@ -357,4 +357,41 @@ mod tests {
         let human = me.human();
         assert!(human.contains("is guest") && human.contains("no") && human.contains('-'));
     }
+
+    #[test]
+    fn only_verified_or_cross_signed_senders_are_proven() {
+        use matrix_sdk::deserialized_responses::{AlgorithmInfo, DeviceLinkProblem};
+
+        let info = |level: Option<VerificationLevel>| EncryptionInfo {
+            sender: "@bot:example.org".try_into().unwrap(),
+            sender_device: None,
+            forwarder: None,
+            algorithm_info: AlgorithmInfo::MegolmV1AesSha2 {
+                curve25519_key: String::new(),
+                sender_claimed_keys: Default::default(),
+                session_id: None,
+            },
+            verification_state: level.map_or(VerificationState::Verified, |level| {
+                VerificationState::Unverified(level)
+            }),
+        };
+        let unproven = |level| sender_unproven(Some(&info(level)));
+
+        // Unencrypted events carry no claim that could be unproven.
+        assert!(!sender_unproven(None));
+        assert!(!unproven(None));
+        // Cross-signed device of an identity we did not verify: Element's
+        // default, shown without a shield.
+        assert!(!unproven(Some(VerificationLevel::UnverifiedIdentity)));
+
+        for level in [
+            VerificationLevel::VerificationViolation,
+            VerificationLevel::UnsignedDevice,
+            VerificationLevel::None(DeviceLinkProblem::MissingDevice),
+            VerificationLevel::None(DeviceLinkProblem::InsecureSource),
+            VerificationLevel::MismatchedSender,
+        ] {
+            assert!(unproven(Some(level.clone())), "{level:?}");
+        }
+    }
 }
