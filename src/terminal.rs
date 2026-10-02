@@ -31,7 +31,8 @@ pub(crate) fn read_message() -> io::Result<String> {
     Ok(buf)
 }
 
-pub(crate) async fn confirm(question: &str) -> anyhow::Result<bool> {
+/// Blocks on terminal input; call it from `spawn_blocking` in async code.
+pub(crate) fn confirm(question: &str) -> anyhow::Result<bool> {
     Confirmation::new(question)
         .default_positive(false)
         .style(ConfirmationStyle::default())

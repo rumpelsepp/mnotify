@@ -15,20 +15,26 @@ use tracing::warn;
 
 use crate::terminal;
 
-async fn sas_verification_handler(sas: SasVerification) {
-    let other_user_id = sas.other_device().user_id();
-    let other_device_id = sas.other_device().device_id();
+/// Drive one SAS verification to its end. Returns an error if it was
+/// cancelled, by either side.
+async fn sas_verification_handler(sas: SasVerification) -> anyhow::Result<()> {
+    let other_user_id = sas.other_device().user_id().to_owned();
+    let other_device_id = sas.other_device().device_id().to_owned();
 
     println!("Starting verification with {other_user_id} {other_device_id}");
 
-    if !sas.we_started()
-        && let Err(e) = sas.accept().await
-    {
-        warn!("could not accept the verification: {e}");
-        return;
+    if !sas.we_started() {
+        sas.accept()
+            .await
+            .context("could not accept the verification")?;
     }
 
     let mut stream = sas.changes();
+    // The SDK reports `KeysExchanged` a second time once the other side's MAC
+    // arrives (its `MacReceived` state maps to it), i.e. when the user confirms
+    // on the other device first. Ask only once: a second prompt would compete
+    // with the first one for stdin and print into the raw-mode terminal.
+    let mut asked = false;
 
     while let Some(state) = stream.next().await {
         match state {
@@ -36,10 +42,14 @@ async fn sas_verification_handler(sas: SasVerification) {
                 emojis,
                 decimals: _,
             } => {
+                if asked {
+                    continue;
+                }
+                asked = true;
+
                 let Some(emojis) = emojis else {
-                    warn!("the other device does not support emoji verification");
                     let _ = sas.cancel().await;
-                    break;
+                    anyhow::bail!("the other device does not support emoji verification");
                 };
                 println!("Confirm that the emojis match!");
                 println!("{}", format_emojis(emojis.emojis));
@@ -48,7 +58,11 @@ async fn sas_verification_handler(sas: SasVerification) {
                 tokio::spawn(async move {
                     // Anything but an explicit "yes" (including a missing
                     // terminal) cancels: never confirm by accident.
-                    let result = match terminal::confirm("confirm").await {
+                    let answer = tokio::task::spawn_blocking(|| terminal::confirm("confirm"))
+                        .await
+                        .map_err(anyhow::Error::from)
+                        .and_then(|r| r);
+                    let result = match answer {
                         Ok(true) => sas.confirm().await,
                         Ok(false) => sas.cancel().await,
                         Err(e) => {
@@ -62,20 +76,11 @@ async fn sas_verification_handler(sas: SasVerification) {
                 });
             }
             SasState::Done { .. } => {
-                println!(
-                    "successfully verified device {} {}",
-                    other_user_id, other_device_id,
-                );
-
-                break;
+                println!("successfully verified device {other_user_id} {other_device_id}");
+                return Ok(());
             }
             SasState::Cancelled(cancel_info) => {
-                println!(
-                    "verification has been cancelled, reason: {}",
-                    cancel_info.reason()
-                );
-
-                break;
+                anyhow::bail!("verification cancelled: {}", cancel_info.reason());
             }
             SasState::Created { .. }
             | SasState::Started { .. }
@@ -83,6 +88,7 @@ async fn sas_verification_handler(sas: SasVerification) {
             | SasState::Confirmed => (),
         }
     }
+    anyhow::bail!("verification ended unexpectedly")
 }
 
 impl super::Client {
@@ -103,22 +109,22 @@ impl super::Client {
         let mut changes = request.changes();
         while let Some(state) = changes.next().await {
             match state {
+                // Starting SAS moves the request to `Transitioned`, handled
+                // below, as is a SAS the other device started itself.
                 VerificationRequestState::Ready { .. } => {
-                    if let Some(sas) = request.start_sas().await? {
-                        sas_verification_handler(sas).await;
-                    }
+                    request.start_sas().await?;
                 }
                 VerificationRequestState::Transitioned {
                     verification: Verification::SasV1(sas),
-                } => sas_verification_handler(sas).await,
-                VerificationRequestState::Done => break,
+                } => return sas_verification_handler(sas).await,
+                VerificationRequestState::Done => return Ok(()),
                 VerificationRequestState::Cancelled(info) => {
                     anyhow::bail!("verification cancelled: {}", info.reason());
                 }
                 _ => {}
             }
         }
-        Ok(())
+        anyhow::bail!("verification ended unexpectedly")
     }
 
     /// React to verification requests from our own other devices (to-device
@@ -156,7 +162,11 @@ impl super::Client {
                     .get_verification(&ev.sender, ev.content.transaction_id.as_str())
                     .await
                 {
-                    tokio::spawn(sas_verification_handler(sas));
+                    tokio::spawn(async move {
+                        if let Err(e) = sas_verification_handler(sas).await {
+                            eprintln!("{e:#}");
+                        }
+                    });
                 }
             },
         );
