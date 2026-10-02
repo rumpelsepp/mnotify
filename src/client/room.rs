@@ -5,7 +5,10 @@ use std::path::Path;
 
 use anyhow::{Context, anyhow, bail};
 use image::{GenericImageView, ImageFormat};
-use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseImageInfo, Thumbnail};
+use matrix_sdk::attachment::{
+    AttachmentConfig, AttachmentInfo, BaseAudioInfo, BaseFileInfo, BaseImageInfo, BaseVideoInfo,
+    Thumbnail,
+};
 use matrix_sdk::deserialized_responses::{TimelineEvent, TimelineEventKind, UnableToDecryptReason};
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk::room::{IncludeRelations, MessagesOptions, RelationsOptions, Room};
@@ -51,7 +54,10 @@ const THUMBNAIL_SIZE: u32 = 800;
 /// decode failure falls back to a plain upload.
 fn image_attachment_config(data: &[u8]) -> AttachmentConfig {
     let Ok(image) = image::load_from_memory(data) else {
-        return AttachmentConfig::new();
+        return AttachmentConfig::new().info(AttachmentInfo::Image(BaseImageInfo {
+            size: UInt::new(data.len() as u64),
+            ..Default::default()
+        }));
     };
     let (width, height) = image.dimensions();
 
@@ -192,10 +198,20 @@ impl super::Client {
         let data = fs::read(path).with_context(|| format!("could not read {}", path.display()))?;
         let content_type = mime_guess::from_path(path).first_or_octet_stream();
 
-        let mut config = if content_type.type_() == mime::IMAGE {
-            image_attachment_config(&data)
-        } else {
-            AttachmentConfig::new()
+        // The SDK leaves out the size unless it is given, and clients then
+        // cannot say how large a file is before downloading it.
+        let size = UInt::new(data.len() as u64);
+        let mut config = match content_type.type_() {
+            mime::IMAGE => image_attachment_config(&data),
+            mime::AUDIO => AttachmentConfig::new().info(AttachmentInfo::Audio(BaseAudioInfo {
+                size,
+                ..Default::default()
+            })),
+            mime::VIDEO => AttachmentConfig::new().info(AttachmentInfo::Video(BaseVideoInfo {
+                size,
+                ..Default::default()
+            })),
+            _ => AttachmentConfig::new().info(AttachmentInfo::File(BaseFileInfo { size })),
         };
         config.reply = addressing.relation.map(Into::into);
         config.mentions = Some(addressing.mentions);
@@ -438,8 +454,13 @@ mod tests {
     }
 
     #[test]
-    fn non_images_are_sent_as_plain_files() {
+    fn undecodable_images_get_only_their_size() {
         let config = image_attachment_config(b"not an image");
-        assert!(config.info.is_none() && config.thumbnail.is_none());
+        assert!(config.thumbnail.is_none());
+        let Some(AttachmentInfo::Image(info)) = config.info else {
+            panic!("no image info");
+        };
+        assert_eq!(info.size, matrix_sdk::ruma::UInt::new(12));
+        assert!(info.width.is_none() && info.height.is_none());
     }
 }
