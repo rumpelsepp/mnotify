@@ -49,6 +49,7 @@ features = ["anyhow", "markdown", "socks", "bundled-sqlite", "qrcode", "sso-logi
 [dev-dependencies]
 assert_cmd = "2.0.8"
 predicates = "3.0.3"
+tempfile = "3.27.0"
 
 [[bin]]
 name = "mn"

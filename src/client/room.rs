@@ -364,3 +364,64 @@ impl From<Relation> for Reply {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use image::{DynamicImage, ImageFormat};
+    use matrix_sdk::attachment::AttachmentInfo;
+
+    use super::{THUMBNAIL_SIZE, image_attachment_config};
+
+    fn png(image: DynamicImage) -> Vec<u8> {
+        let mut buf = Cursor::new(Vec::new());
+        image.write_to(&mut buf, ImageFormat::Png).unwrap();
+        buf.into_inner()
+    }
+
+    fn size(info: Option<&AttachmentInfo>) -> (u64, u64) {
+        let Some(AttachmentInfo::Image(info)) = info else {
+            panic!("no image info");
+        };
+        (info.width.unwrap().into(), info.height.unwrap().into())
+    }
+
+    #[test]
+    fn small_images_get_no_thumbnail() {
+        let config = image_attachment_config(&png(DynamicImage::new_rgb8(40, 20)));
+        assert_eq!(size(config.info.as_ref()), (40, 20));
+        assert!(config.thumbnail.is_none());
+    }
+
+    #[test]
+    fn large_images_get_a_thumbnail_within_the_bounds() {
+        let config = image_attachment_config(&png(DynamicImage::new_rgb8(1600, 400)));
+        assert_eq!(size(config.info.as_ref()), (1600, 400));
+
+        let thumbnail = config.thumbnail.unwrap();
+        assert_eq!(thumbnail.content_type, mime::IMAGE_JPEG);
+        let (width, height): (u64, u64) = (thumbnail.width.into(), thumbnail.height.into());
+        assert_eq!(
+            (width, height),
+            (THUMBNAIL_SIZE.into(), 200),
+            "aspect ratio kept"
+        );
+        let decoded = image::load_from_memory_with_format(&thumbnail.data, ImageFormat::Jpeg);
+        assert_eq!(decoded.unwrap().width(), THUMBNAIL_SIZE);
+    }
+
+    #[test]
+    fn transparent_images_get_a_png_thumbnail() {
+        let config = image_attachment_config(&png(DynamicImage::new_rgba8(400, 1000)));
+        let thumbnail = config.thumbnail.unwrap();
+        assert_eq!(thumbnail.content_type, mime::IMAGE_PNG);
+        assert!(image::load_from_memory_with_format(&thumbnail.data, ImageFormat::Png).is_ok());
+    }
+
+    #[test]
+    fn non_images_are_sent_as_plain_files() {
+        let config = image_attachment_config(b"not an image");
+        assert!(config.info.is_none() && config.thumbnail.is_none());
+    }
+}
