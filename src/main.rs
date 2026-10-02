@@ -197,7 +197,7 @@ enum Command {
         #[arg(long)]
         disable: bool,
     },
-    /// Verify this device with another of your devices: wait for a request, or start one with --device
+    /// Verify this device with another of your devices: wait for a request started there, or start one with --device
     Verify {
         /// Device ID of one of your own devices to start verifying
         #[arg(long)]
@@ -524,6 +524,11 @@ async fn run(
             }
             None => {
                 client.set_sas_handlers().await?;
+                let device_id = client.device_id().map(|d| d.as_str()).unwrap_or("?");
+                eprintln!(
+                    "Waiting for a verification request. Start it on the other device \
+                     by selecting this session ({device_id}) in its session list."
+                );
                 client
                     .sync_forever(Scope::Account, sync_settings.clone())
                     .await?;

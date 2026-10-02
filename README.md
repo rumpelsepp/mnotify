@@ -217,9 +217,12 @@ warns that the new device is not cross-signed. Sign it with the recovery key...
 $ mn recovery recover < recovery-key.txt
 ```
 
-...or verify it from another signed-in device: run `mn verify`, start the
-verification there, compare the emojis and confirm. `mn verify --device
-<DEVICE_ID>` starts it from this side instead.
+...or verify it from another signed-in device: run `mn verify` and leave it
+running. The other device shows no prompt by itself; open its session list
+(in Element: Settings > Sessions), select the mnotify session (the device ID
+`mn verify` prints) and choose "Verify". Then compare the emojis on both sides
+and confirm. `mn verify --device <DEVICE_ID>` starts it from this side
+instead.
 
 `mn recovery status` reports the current state.
 
