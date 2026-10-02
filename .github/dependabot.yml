@@ -14,3 +14,7 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+  - package-ecosystem: "docker"
+    directory: "/tests/e2e/synapse"
+    schedule:
+      interval: "monthly"
