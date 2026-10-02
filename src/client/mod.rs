@@ -12,6 +12,7 @@ use crate::CRATE_NAME;
 
 pub mod lock;
 pub mod login;
+pub mod profile;
 pub mod recovery;
 pub mod room;
 pub mod sas;
@@ -119,7 +120,10 @@ impl Client {
     /// Build a client from the persisted `meta.json`.
     pub(crate) async fn from_meta() -> anyhow::Result<Self> {
         if !session::Meta::exists()? {
-            bail!("not logged in; run `mn login @user:example.org` first");
+            bail!(
+                "profile \"{}\" is not logged in; run `mn login @user:example.org` first",
+                profile::name()
+            );
         }
         let meta = session::Meta::load()?;
         let mut client = Self::new(meta.user_id, meta.device_name, Some(&meta.homeserver)).await?;

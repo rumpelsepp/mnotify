@@ -27,7 +27,7 @@ management beyond creating and joining rooms. What it does support, using the ca
 | OAuth 2.0 / OIDC | ◐ partial | `--qr`: login by scanning a QR code with an already signed-in device (MSC4108). No browser-based OAuth flow yet |
 | Threads | ✅ supported | Start or continue a thread with `send --thread` (text, notices, files), read one with `messages --thread`; replies stay in their thread |
 | Spaces | ✗ | Spaces are flagged in `mn room list`, nothing more |
-| Multiple accounts | ✗ | One account per `meta.json`; switch with `MN_META_FILE` |
+| Multiple accounts | ✅ supported | One login per profile, select with `-p`/`--profile`; also several devices of one account side by side |
 | Invisible crypto (MSC4153) | ✅ supported | Room keys only for cross-signed devices, messages from other devices are ignored; `mn` cross-signs a new account itself |
 | Sliding sync | ✅ supported | Simplified sliding sync (MSC4186) where the homeserver offers it, `/v3/sync` otherwise |
 | Voice / video calls | ✗ | Out of scope |
@@ -143,8 +143,21 @@ homeserver lives elsewhere and has no `.well-known`, name it:
 $ mn login @user:example.org --homeserver https://matrix.example.org
 ```
 
-Only one account is logged in at a time; `mn logout` ends the session on the
-server and deletes all local state.
+Each profile holds one login; `mn logout` ends the session on the server and
+deletes the local state of that profile. Without `-p`/`--profile` (or
+`MN_PROFILE`), `mn` uses the profile `default`. Any other name selects a profile
+of its own, with its own login, store and lock:
+
+```
+$ mn login @alerts:example.org
+$ mn -p ops login @ops:example.org
+$ mn -p ops send --room '#ops:example.org' 'deploy done'
+```
+
+A profile can also hold a second device of the same account, e.g. one that
+sends while `mn sync` runs in the default profile (see
+[Concurrent invocations](#concurrent-invocations)). Profile names consist of
+ASCII letters, digits, `-`, `_` and `.`, and do not start with `.`.
 
 Logins made with older `mn` versions are not migrated: `mn` asks you to remove
 them with `mn clean @user:example.org` and to log in again.
@@ -292,17 +305,17 @@ temporary `XDG_STATE_HOME`, so all tests share one homeserver but no state.
 
 ### Concurrent invocations
 
-Only one `mn` process per account runs at a time; others wait until it
-exits. Each process keeps the account's Olm sessions in memory, and two of
+Only one `mn` process per profile and account runs at a time; others wait
+until it exits. Each process keeps the account's Olm sessions in memory, and two of
 them encrypting with the same session at once make the receiver lose room
 keys, i.e. messages it can never decrypt. Overlapping cron jobs or a burst of
 `mn send` from a script are therefore serialized; with `-v`, a waiting process
 logs the PID it waits for, and after ten seconds it warns anyway.
 
 `mn sync` and `mn verify` hold the lock for as long as they run, so a script
-that reacts to `mn sync` output with `mn send` on the same account blocks. Log
-in a second device for the sender in its own state directory
-(`XDG_STATE_HOME=... mn login ...`) instead.
+that reacts to `mn sync` output with `mn send` in the same profile blocks. Log
+in a second device of the account for the sender in a profile of its own
+(`mn -p sender login ...`) and send with `mn -p sender send ...`.
 
 ### Environment Variables
 
@@ -317,7 +330,7 @@ encrypted state store in the system keyring via the
 [Secret Service API](https://specifications.freedesktop.org/secret-service/latest/).
 If no keyring is usable at the first login (no session bus or no Secret
 Service, as on most servers), it falls back to
-`$XDG_STATE_HOME/mnotify/$USER_ID/session.json` (mode `0600`) automatically,
+`$XDG_STATE_HOME/mnotify/$PROFILE/$USER_ID/session.json` (mode `0600`) automatically,
 and `mn login` prints a warning. Once that file exists it is always used. Set
 `MN_NO_KEYRING` to use the file even where a keyring is available.
 
@@ -343,9 +356,9 @@ homeserver offers sliding sync. The choice holds until `mn logout`.
 
 Disable TLS verification. Only for testing.
 
-#### `MN_META_FILE`
+#### `MN_PROFILE`
 
-Overwrite the path to `meta.json` (see below).
+Default for `-p`/`--profile`.
 
 #### `RUST_LOG`
 
@@ -357,6 +370,17 @@ filter, e.g. `RUST_LOG=matrix_sdk=debug`. Overrides `-v`/`-q`.
 `mnotify` conforms to the
 [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html).
 
-- `$XDG_STATE_HOME/mnotify/meta.json` -- which user is logged in, and its homeserver URL.
-- `$XDG_STATE_HOME/mnotify/$USER_ID/session.json` -- session + store passphrase, only if no keyring is used.
-- `$XDG_STATE_HOME/mnotify/$USER_ID/store/` -- the SQLite state/crypto store, encrypted with the store passphrase.
+All state lives in one directory per profile, `$XDG_STATE_HOME/mnotify/$PROFILE/`
+(`$PROFILE` is `default` without `-p`):
+
+- `$PROFILE/meta.json` -- which user is logged in, and its homeserver URL.
+- `$PROFILE/$USER_ID/session.json` -- session + store passphrase, only if no keyring is used.
+- `$PROFILE/$USER_ID/store/` -- the SQLite state/crypto store, encrypted with the store passphrase.
+- `$PROFILE/$USER_ID/lock` -- held by the running `mn` process, see [Concurrent invocations](#concurrent-invocations).
+
+In the system keyring, the secrets are stored under the service `mnotify`
+(profile `default`) or `mnotify/$PROFILE`, with the user ID as the account.
+
+State from an `mn` before profiles (`meta.json` and the user directories
+directly in `$XDG_STATE_HOME/mnotify/`) is moved into the profile `default` on
+the first run; `mn` says so on stderr.

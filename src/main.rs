@@ -20,6 +20,7 @@ mod output;
 mod terminal;
 
 use crate::client::lock::AccountLock;
+use crate::client::profile;
 use crate::client::recovery::NOT_CROSS_SIGNED;
 use crate::client::sync::Scope;
 use crate::client::{Addressing, Client, NewRoom, Relation, TextKind, session};
@@ -36,6 +37,18 @@ struct Cli {
     /// Print machine-readable JSON instead of tables and text
     #[arg(long, global = true)]
     json: bool,
+
+    /// Use this profile: its own login, state and lock, for several accounts
+    /// or devices side by side
+    #[arg(
+        short,
+        long,
+        global = true,
+        env = "MN_PROFILE",
+        default_value = profile::DEFAULT,
+        value_parser = profile::parse_name,
+    )]
+    profile: String,
 
     /// Request the full state during sync
     #[arg(long)]
@@ -335,7 +348,11 @@ async fn create_client(cmd: &Command) -> anyhow::Result<Client> {
                 let current = session::Meta::load()
                     .map(|m| m.user_id.to_string())
                     .unwrap_or_else(|_| "another user".into());
-                bail!("already logged in as {current}; run `mn logout` first");
+                bail!(
+                    "profile \"{}\" is already logged in as {current}; run `mn logout` \
+                     first, or log in with another profile: `mn -p <name> login ...`",
+                    profile::name()
+                );
             }
             Client::new(user_id.clone(), device_name.clone(), homeserver.as_deref()).await
         }
@@ -369,6 +386,9 @@ async fn main() -> anyhow::Result<()> {
         .with_writer(std::io::stderr)
         .with_ansi(std::io::stderr().is_terminal())
         .init();
+
+    profile::migrate_legacy_layout().context("migrate the local state into profiles")?;
+    profile::select(args.profile.clone());
 
     if let Command::Clean { user_id } = &args.command {
         // Not while another process still uses the store.
