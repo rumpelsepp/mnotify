@@ -1,4 +1,8 @@
-on: [push, pull_request]
+on:
+  # Branch pushes are covered by their pull request; avoid running twice.
+  push:
+    branches: [master]
+  pull_request:
 
 name: ci
 
@@ -6,11 +10,32 @@ env:
   RUSTFLAGS: "-Dwarnings"
   CARGO_TERM_COLOR: always
 
+# build and lint side by side; all test jobs in parallel once build is done.
 jobs:
-  check:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+
+      # Caches ~/.cargo and target/, keyed on Cargo.lock and the toolchain.
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build mn
+        run: cargo build --release
+
+      # The e2e jobs test exactly this binary.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mn
+          path: target/release/mn
+          retention-days: 1
+
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: Swatinem/rust-cache@v2
 
       - name: Run format check
         run: cargo fmt --check
@@ -18,5 +43,52 @@ jobs:
       - name: Run clippy
         run: cargo clippy --all-targets
 
+  unit:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: Swatinem/rust-cache@v2
+
       - name: Run tests
         run: cargo test
+
+  e2e:
+    needs: build
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # mn syncs via sliding sync where the server offers it, /v3/sync otherwise.
+        sync: [sliding, v3]
+    name: e2e (${{ matrix.sync }})
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: mn
+          path: target/release
+
+      # uvx runs synadm, which creates the test users.
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install bats
+        run: |
+          chmod +x target/release/mn
+          sudo apt-get update
+          sudo apt-get install -y bats bats-assert bats-support
+
+      - name: Start Synapse
+        run: tests/e2e/synapse.sh up
+
+      - name: Run e2e tests
+        env:
+          MN_SLIDING_SYNC: ${{ matrix.sync == 'v3' && '0' || '' }}
+        run: bats --timing tests/e2e
+
+      # Only the tail: the full log would bury the bats output above it.
+      - name: Synapse log
+        if: failure()
+        run: tests/e2e/synapse.sh logs 2>&1 | tail -n 200
