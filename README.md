@@ -17,7 +17,7 @@ $Kx0…
 ## Features
 
 `mnotify` is deliberately not a full chat client: no UI, no calls, no room
-management beyond joining. What it does support, using the categories of the
+management beyond creating and joining rooms. What it does support, using the categories of the
 [client list on matrix.org](https://matrix.org/ecosystem/clients/):
 
 | Feature | Status | Notes |
@@ -26,7 +26,7 @@ management beyond joining. What it does support, using the categories of the
 | SSO | ✅ supported | Legacy `m.login.sso` (SAML, OIDC upstreams) via `--sso`, also headless over an SSH port forward |
 | OAuth 2.0 / OIDC | ◐ partial | `--qr`: login by scanning a QR code with an already signed-in device (MSC4108). No browser-based OAuth flow yet |
 | Threads | ✅ supported | Start or continue a thread with `send --thread` (text, notices, files), read one with `messages --thread`; replies stay in their thread |
-| Spaces | ✗ | Spaces are flagged in `mn rooms`, nothing more |
+| Spaces | ✗ | Spaces are flagged in `mn room list`, nothing more |
 | Multiple accounts | ✗ | One account per `meta.json`; switch with `MN_META_FILE` |
 | Invisible crypto (MSC4153) | ✅ supported | Room keys only for cross-signed devices, messages from other devices are ignored; `mn` cross-signs a new account itself |
 | Sliding sync | ✅ supported | Simplified sliding sync (MSC4186) where the homeserver offers it, `/v3/sync` otherwise |
@@ -65,7 +65,7 @@ and the shell history.
 server. Aliases and room IDs both work everywhere:
 
 ```
-$ mn join '#ops:example.org'
+$ mn room join '#ops:example.org'
 !abc…:example.org
 ```
 
@@ -231,11 +231,12 @@ instead.
 | Command | Purpose |
 |---|---|
 | `mn login` / `mn logout` | Create / end the session |
-| `mn join <room>` | Join a room or accept an invite |
+| `mn room create` | Create a room (encrypted unless `--unencrypted`), optionally with `--name`, `--alias`, `--invite`; prints the room ID |
+| `mn room join <room>` | Join a room or accept an invite |
 | `mn send` | Send text, Markdown, notices, emotes, replies or files; prints the event ID |
 | `mn messages -r <room>` | Print the latest messages of a room (`--json`: an array of raw events) |
 | `mn sync` | Print incoming timeline events, forever (`--json`: one raw event per line) |
-| `mn rooms` | Room details: name, members, encryption, ... |
+| `mn room list`, `mn room info -r <room>` | Your rooms / one room's details: name, members, encryption, ... |
 | `mn redact` | Delete an event |
 | `mn typing` | Show / hide the typing indicator |
 | `mn verify`, `mn recovery` | Device verification and key backup |
@@ -243,7 +244,7 @@ instead.
 | `mn clean <user>` | Delete local state without contacting the server |
 
 `mn <command> --help` documents every option. Output is meant for people:
-tables, plain text, and just the ID for `send` and `join`, so
+tables, plain text, and just the ID for `send`, `room create` and `room join`, so
 `id=$(mn send …)` works as is. Add `--json` to any command for JSON instead. Every command that takes a room
 accepts a room ID (`!abc:example.org`) or an alias (`#ops:example.org`).
 

@@ -30,7 +30,7 @@ pub(crate) enum Scope<'a> {
     Account,
     /// One room (`send`, `messages`, ...).
     Room(&'a RoomId),
-    /// Every room of the account (`rooms`, `sync`).
+    /// Every room of the account (`room list`, `sync`).
     AllRooms,
 }
 
@@ -44,7 +44,7 @@ const BATCH_SIZE: u32 = 100;
 const LIVE_TIMELINE_LIMIT: u32 = 50;
 
 /// The state a command needs to know about a room: whether it is encrypted,
-/// our membership, and what `mn rooms` prints.
+/// our membership, and what `mn room info` prints.
 fn required_state() -> Vec<(StateEventType, String)> {
     [
         StateEventType::RoomCreate,

@@ -21,7 +21,7 @@ mod terminal;
 
 use crate::client::recovery::NOT_CROSS_SIGNED;
 use crate::client::sync::Scope;
-use crate::client::{Addressing, Client, Relation, TextKind, session};
+use crate::client::{Addressing, Client, NewRoom, Relation, TextKind, session};
 use crate::output::{Events, Record, Rooms};
 
 const CRATE_NAME: &str = clap::crate_name!();
@@ -63,6 +63,11 @@ enum Command {
         /// Full Matrix ID, e.g. @bot:example.org
         user_id: OwnedUserId,
     },
+    /// Manage rooms
+    Room {
+        #[command(subcommand)]
+        action: RoomAction,
+    },
     /// Get information about your homeserver and login
     #[command(alias = "hs")]
     Homeserver {
@@ -73,11 +78,6 @@ enum Command {
         /// Include the bearer token
         #[arg(short = 't', long = "token")]
         include_token: bool,
-    },
-    /// Join a room or accept an invite
-    Join {
-        /// Room ID (!abc:example.org) or alias (#ops:example.org)
-        room: OwnedRoomOrAliasId,
     },
     /// Log in and create the local session store
     Login {
@@ -131,12 +131,6 @@ enum Command {
         /// Reason shown to other members
         #[arg(long)]
         reason: Option<String>,
-    },
-    /// Query room information
-    Rooms {
-        /// Only query this room (ID or alias)
-        #[arg(short, long)]
-        room: Option<OwnedRoomOrAliasId>,
     },
     /// Send a message or file to a room; prints the event ID
     Send {
@@ -213,6 +207,48 @@ enum Command {
 }
 
 #[derive(Debug, Subcommand)]
+enum RoomAction {
+    /// Join a room or accept an invite
+    Join {
+        /// Room ID (!abc:example.org) or alias (#ops:example.org)
+        room: OwnedRoomOrAliasId,
+    },
+    /// List the rooms you are in, with details
+    List,
+    /// Details of one room: name, members, encryption, ...
+    Info {
+        #[command(flatten)]
+        room: RoomArg,
+    },
+    /// Create a room and print its ID; end-to-end encrypted unless --unencrypted
+    Create {
+        /// Room name shown to members
+        #[arg(long)]
+        name: Option<String>,
+
+        /// Room topic
+        #[arg(long)]
+        topic: Option<String>,
+
+        /// Local part of an alias to publish, e.g. `ops` for #ops:example.org
+        #[arg(long, value_name = "LOCALPART")]
+        alias: Option<String>,
+
+        /// Invite this user (repeatable)
+        #[arg(long, value_name = "USER_ID")]
+        invite: Vec<OwnedUserId>,
+
+        /// Let anyone join, not just invited users
+        #[arg(long)]
+        public: bool,
+
+        /// Do not enable end-to-end encryption (cannot be turned off later)
+        #[arg(long)]
+        unencrypted: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 enum RecoveryAction {
     /// Print recovery, key-backup and cross-signing status
     Status,
@@ -245,10 +281,14 @@ impl Command {
             | Command::Redact { room, .. }
             | Command::Send { room, .. }
             | Command::Typing { room, .. } => SyncNeed::Room(&room.room),
-            Command::Rooms { room: Some(room) } => SyncNeed::Room(room),
-            Command::Rooms { room: None } => SyncNeed::AllRooms,
-            Command::Homeserver { .. }
-            | Command::Join { .. }
+            Command::Room {
+                action: RoomAction::Info { room },
+            } => SyncNeed::Room(&room.room),
+            Command::Room {
+                action: RoomAction::List,
+            } => SyncNeed::AllRooms,
+            Command::Room { .. }
+            | Command::Homeserver { .. }
             | Command::Logout
             | Command::Verify { .. }
             | Command::Recovery { .. }
@@ -464,7 +504,35 @@ async fn run(
             }
             .dump()?;
         }
-        Command::Join { room } => {
+        Command::Room {
+            action:
+                RoomAction::Create {
+                    name,
+                    topic,
+                    alias,
+                    invite,
+                    public,
+                    unencrypted,
+                },
+        } => {
+            let room = client
+                .create_room(NewRoom {
+                    name,
+                    topic,
+                    alias,
+                    invite,
+                    public,
+                    encrypted: !unencrypted,
+                })
+                .await?;
+            let out = Record::new()
+                .field("room_id", room.room_id())
+                .headline("room_id");
+            output::print(json, &out)?;
+        }
+        Command::Room {
+            action: RoomAction::Join { room },
+        } => {
             let joined = client.join(&room).await?;
             let out = Record::new()
                 .field("room_id", joined.room_id())
@@ -490,23 +558,26 @@ async fn run(
             });
             output::print(json, &Events(events.collect()))?;
         }
-        Command::Rooms { room } => match room {
-            Some(room) => {
-                let room_id = client.resolve_room_id(&room).await?;
-                let Some(room) = client.get_room(&room_id) else {
-                    bail!("unknown room: {room}");
-                };
-                output::print(json, &client.query_room(room).await?)?;
+        Command::Room {
+            action: RoomAction::Info { room },
+        } => {
+            let room = room.room;
+            let room_id = client.resolve_room_id(&room).await?;
+            let Some(room) = client.get_room(&room_id) else {
+                bail!("unknown room: {room}");
+            };
+            output::print(json, &client.query_room(room).await?)?;
+        }
+        Command::Room {
+            action: RoomAction::List,
+        } => {
+            let mut rooms = Vec::new();
+            for room in client.rooms() {
+                rooms.push(client.query_room(room).await?);
             }
-            None => {
-                let mut rooms = Vec::new();
-                for room in client.rooms() {
-                    rooms.push(client.query_room(room).await?);
-                }
-                rooms.sort_by(|a, b| a.display_name.cmp(&b.display_name));
-                output::print(json, &Rooms(rooms))?;
-            }
-        },
+            rooms.sort_by(|a, b| a.display_name.cmp(&b.display_name));
+            output::print(json, &Rooms(rooms))?;
+        }
         Command::Redact {
             room,
             event_id,

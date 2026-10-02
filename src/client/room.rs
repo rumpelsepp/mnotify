@@ -9,14 +9,30 @@ use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseImageInfo, Th
 use matrix_sdk::deserialized_responses::{TimelineEvent, TimelineEventKind, UnableToDecryptReason};
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk::room::{IncludeRelations, MessagesOptions, RelationsOptions, Room};
-use matrix_sdk::ruma::events::Mentions;
+use matrix_sdk::ruma::api::client::room::create_room::{self, v3::RoomPreset};
 use matrix_sdk::ruma::events::relation::RelationType;
+use matrix_sdk::ruma::events::room::encryption::RoomEncryptionEventContent;
 use matrix_sdk::ruma::events::room::message::{
     AddMentions, ReplyWithinThread, RoomMessageEventContentWithoutRelation,
 };
-use matrix_sdk::ruma::{EventId, OwnedEventId, OwnedRoomId, RoomId, RoomOrAliasId, UInt};
+use matrix_sdk::ruma::events::{InitialStateEvent, Mentions};
+use matrix_sdk::ruma::{
+    EventId, OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, RoomOrAliasId, UInt,
+};
 use matrix_sdk::{RoomMemberships, RoomState};
 use tracing::warn;
+
+/// What `mn room create` asks the homeserver for.
+pub(crate) struct NewRoom {
+    pub(crate) name: Option<String>,
+    pub(crate) topic: Option<String>,
+    /// Local part of the alias, e.g. `ops` for `#ops:example.org`.
+    pub(crate) alias: Option<String>,
+    pub(crate) invite: Vec<OwnedUserId>,
+    /// Anyone can join (`public_chat`) instead of invite only (`private_chat`).
+    pub(crate) public: bool,
+    pub(crate) encrypted: bool,
+}
 
 /// Which flavour of `m.room.message` to send.
 #[derive(Debug, Clone, Copy)]
@@ -93,13 +109,40 @@ impl super::Client {
     pub(crate) async fn joined_room(&self, room: &RoomOrAliasId) -> anyhow::Result<Room> {
         let room_id = self.resolve_room_id(room).await?;
         let Some(joined) = self.inner.get_room(&room_id) else {
-            bail!("not a member of {room}; join it first: mn join '{room}'");
+            bail!("not a member of {room}; join it first: mn room join '{room}'");
         };
         match joined.state() {
             RoomState::Joined => Ok(joined),
-            RoomState::Invited => bail!("{room} is a pending invite; accept it: mn join '{room}'"),
-            state => bail!("not a member of {room} (state: {state:?}); join it: mn join '{room}'"),
+            RoomState::Invited => {
+                bail!("{room} is a pending invite; accept it: mn room join '{room}'")
+            }
+            state => {
+                bail!("not a member of {room} (state: {state:?}); join it: mn room join '{room}'")
+            }
         }
+    }
+
+    /// Create a room we are the only member of; `invite` is invited right away.
+    pub(crate) async fn create_room(&self, opts: NewRoom) -> anyhow::Result<Room> {
+        let mut request = create_room::v3::Request::new();
+        request.name = opts.name;
+        request.topic = opts.topic;
+        request.room_alias_name = opts.alias;
+        request.invite = opts.invite;
+        request.preset = Some(if opts.public {
+            RoomPreset::PublicChat
+        } else {
+            RoomPreset::PrivateChat
+        });
+        if opts.encrypted {
+            request.initial_state = vec![
+                InitialStateEvent::with_empty_state_key(
+                    RoomEncryptionEventContent::with_recommended_defaults(),
+                )
+                .to_raw_any(),
+            ];
+        }
+        Ok(self.inner.create_room(request).await?)
     }
 
     /// Join a room by ID or alias; this also accepts a pending invite.

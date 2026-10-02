@@ -167,7 +167,7 @@ impl Output for Room {
     }
 }
 
-/// The room list of `mn rooms`; one line per room.
+/// The room list of `mn room list`; one line per room.
 #[derive(Serialize)]
 #[serde(transparent)]
 pub(crate) struct Rooms(pub(crate) Vec<Room>);
