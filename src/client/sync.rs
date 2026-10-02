@@ -129,6 +129,9 @@ impl super::Client {
         settings: SyncSettings,
     ) -> anyhow::Result<()> {
         if !self.sliding_sync {
+            // Return at once: the SDK's default long-polls for 30 s whenever
+            // nothing new arrived since the last invocation.
+            let settings = settings.timeout(Duration::ZERO);
             self.inner.sync_once(settings.clone()).await?;
             if self.track_members(scope).await? {
                 // A sync round sends the key queries this calls for.
