@@ -19,6 +19,7 @@ mod client;
 mod output;
 mod terminal;
 
+use crate::client::lock::AccountLock;
 use crate::client::recovery::NOT_CROSS_SIGNED;
 use crate::client::sync::Scope;
 use crate::client::{Addressing, Client, NewRoom, Relation, TextKind, session};
@@ -370,6 +371,8 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     if let Command::Clean { user_id } = &args.command {
+        // Not while another process still uses the store.
+        let _lock = AccountLock::acquire(user_id).await?;
         session::clean(user_id);
         return Ok(());
     }

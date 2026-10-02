@@ -57,7 +57,6 @@ setup() {
 }
 
 @test "parallel sends in an encrypted room are all decryptable" {
-    skip "known bug: concurrent sends from one device sometimes leave messages undecryptable"
     alice_and_bob_in_room
 
     pids=()
