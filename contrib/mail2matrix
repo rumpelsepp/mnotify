@@ -1,0 +1,353 @@
+#!/usr/bin/env python3
+
+"""Forward one mail from stdin to a Matrix room via mnotify (`mn`).
+
+Made for the mails that servers and appliances send to root: TrueNAS alerts,
+Proxmox backup reports, OPNsense/monit, smartd, cron, ... Point them at an MTA
+and let the MTA pipe each mail into this script. Any MTA that can deliver to a
+command works; install the script as /usr/local/bin/mail2matrix, then e.g.:
+
+  OpenSMTPD (smtpd.conf):
+    action "matrix" mda "/usr/local/bin/mail2matrix -r '!abc:example.org'" virtual <vmap>
+
+  Postfix, Exim, sendmail (/etc/aliases, then run `newaliases`):
+    matrix: "|/usr/local/bin/mail2matrix -r '!abc:example.org'"
+
+  A single user (~/.forward):
+    "|/usr/local/bin/mail2matrix -r '!abc:example.org'"
+
+The script runs as the system user the MTA delivers as; that user must have run
+`mn login` and joined the room. Try it by hand as that user, without sending:
+
+    mail2matrix -r '!abc:example.org' --dry-run < mail.eml
+
+What ends up in the room:
+
+  - One message per mail: the subject in bold and the sender. A short body is
+    shown right below it, a long one goes into a thread on that message, so
+    the room keeps one line per mail.
+  - Bodies are code blocks: reports and tables keep their alignment.
+  - Routine mails are notices (`m.notice`): quiet, no notification.
+  - Alerts are regular messages that mention the room (or `--mention` users),
+    so they ping. A mail is an alert if its subject matches `--alert-pattern`
+    or it is marked urgent (X-Priority, Importance, Priority headers).
+  - A body longer than `--max-chars` is cut and attached in full as a text
+    file; attachments of the mail are forwarded into the thread as well.
+
+Mentioning the room needs the power level for `@room` notifications (50 by
+default). Without it the alert is sent anyway, just without the ping.
+
+Exit codes follow sysexits.h:
+  0   delivered
+  75  temporary failure (mn missing, failed or timed out): the MTA retries
+  78  configuration error (no room configured)
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import pwd
+import re
+import shlex
+import subprocess
+import sys
+import tempfile
+from email import policy
+from email.message import EmailMessage
+from email.parser import BytesParser
+from email.utils import parseaddr
+from html.parser import HTMLParser
+from pathlib import Path
+from typing import ClassVar
+
+# Matched against the subject (and the body with --alert-body). Tune it per
+# source: TrueNAS always says "Alerts", monit says "alert" for recoveries too.
+DEFAULT_ALERT_PATTERN = (
+    r"(?i)\b(alert|crit|degraded|emerg|error|fail|fatal|fault|offline|panic|unavail)"
+)
+EX_TEMPFAIL = 75
+EX_CONFIG = 78
+
+
+class MnError(Exception):
+    """`mn` could not be run or exited non-zero."""
+
+
+class _HtmlToText(HTMLParser):
+    _BLOCK: ClassVar[set[str]] = {
+        "br",
+        "p",
+        "div",
+        "tr",
+        "li",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "pre",
+    }
+    _SKIP: ClassVar[set[str]] = {"script", "style"}
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.parts: list[str] = []
+        self._skip = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in self._SKIP:
+            self._skip += 1
+        elif tag in self._BLOCK:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self._SKIP:
+            self._skip = max(0, self._skip - 1)
+        elif tag in self._BLOCK:
+            self.parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if not self._skip:
+            self.parts.append(data)
+
+
+def _normalize(text: str) -> str:
+    lines = [ln.rstrip() for ln in text.replace("\r\n", "\n").split("\n")]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
+def extract_text(msg: EmailMessage) -> str:
+    """Return the plain-text body, falling back to stripped HTML."""
+    part = msg.get_body(preferencelist=("plain", "html"))
+    if part is None:
+        return ""
+    try:
+        content = part.get_content()
+    except (LookupError, UnicodeError):
+        payload = part.get_payload(decode=True)
+        content = payload.decode("utf-8", errors="replace") if payload else ""
+    if part.get_content_type() == "text/html":
+        parser = _HtmlToText()
+        parser.feed(content)
+        content = "".join(parser.parts)
+    return _normalize(content)
+
+
+def is_urgent(msg: EmailMessage) -> bool:
+    """Whether the mail itself claims to be urgent."""
+    return (
+        str(msg["X-Priority"] or "").strip()[:1] in ("1", "2")
+        or str(msg["Importance"] or "").strip().lower() == "high"
+        or str(msg["Priority"] or "").strip().lower() == "urgent"
+    )
+
+
+def md_escape(text: str) -> str:
+    """Escape what Markdown would turn into formatting, links or HTML."""
+    return re.sub(r"([\\`*_\[\]<>&~])", r"\\\1", text)
+
+
+def _fenced(text: str, minimum: int) -> str:
+    runs = re.findall(r"`+", text)
+    return "`" * max(minimum, max(map(len, runs), default=0) + 1)
+
+
+def md_code(text: str) -> str:
+    fence = _fenced(text, 1)
+    return f"{fence} {text} {fence}" if "`" in text else f"{fence}{text}{fence}"
+
+
+def md_code_block(text: str) -> str:
+    fence = _fenced(text, 3)
+    return f"{fence}\n{text}\n{fence}"
+
+
+def format_headline(subject: str, sender: str, alert: bool) -> str:
+    name, addr = parseaddr(sender)
+    text = f"**{md_escape(subject)}**"
+    if alert:
+        text = f"🚨 {text}"
+    origin = " ".join(filter(None, [md_escape(name), addr and md_code(addr)]))
+    if origin:
+        text += f"\n\nFrom {origin}"
+    return text
+
+
+def truncate(body: str, max_chars: int) -> str:
+    """Cut the body at the last full line that fits."""
+    cut = body[:max_chars]
+    if "\n" in cut:
+        cut = cut[: cut.rindex("\n")]
+    return cut.rstrip()
+
+
+def safe_filename(name: str, fallback: str) -> str:
+    name = re.sub(r"[^\w.-]+", "_", os.path.basename(name)).strip("._")
+    return name[:80] or fallback
+
+
+def save_attachments(msg: EmailMessage, tmp: Path) -> list[Path]:
+    paths = []
+    for i, part in enumerate(msg.iter_attachments()):
+        payload = part.get_payload(decode=True)
+        if not payload:
+            continue
+        directory = tmp / str(i)
+        directory.mkdir()
+        path = directory / safe_filename(part.get_filename() or "", f"attachment-{i}")
+        path.write_bytes(payload)
+        paths.append(path)
+    return paths
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Forward one mail from stdin to Matrix.")
+    ap.add_argument("-r", "--room", help="target room, ID or alias (or set MN_ROOM)")
+    ap.add_argument("--mn", default="mn", help="path to the mn binary")
+    ap.add_argument(
+        "--mention",
+        action="append",
+        default=[],
+        metavar="USER_ID",
+        help="ping this user on alerts instead of the whole room (repeatable)",
+    )
+    ap.add_argument("--no-mention", action="store_true", help="never ping anyone")
+    ap.add_argument(
+        "--alert-pattern",
+        default=DEFAULT_ALERT_PATTERN,
+        metavar="REGEX",
+        help="a subject matching this makes the mail an alert",
+    )
+    ap.add_argument(
+        "--alert-body",
+        action="store_true",
+        help="match --alert-pattern against the body as well",
+    )
+    ap.add_argument(
+        "--inline-lines",
+        type=int,
+        default=10,
+        metavar="N",
+        help="bodies longer than this go into a thread (0: always)",
+    )
+    ap.add_argument(
+        "--max-chars",
+        type=int,
+        default=4000,
+        metavar="N",
+        help="bodies longer than this are cut and attached in full",
+    )
+    ap.add_argument(
+        "--timeout", type=float, default=30.0, help="seconds to wait for each mn call"
+    )
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the mn calls and messages instead of sending",
+    )
+    args = ap.parse_args()
+
+    room = args.room or os.environ.get("MN_ROOM")
+    if not room:
+        print("no room configured (--room or MN_ROOM)", file=sys.stderr)
+        return EX_CONFIG
+
+    msg = BytesParser(policy=policy.default).parsebytes(sys.stdin.buffer.read())
+    subject = " ".join(str(msg["Subject"] or "(no subject)").split())
+    # Prefer the From header; the envelope sender most MTAs export as SENDER
+    # is only a fallback.
+    sender = " ".join(str(msg["From"] or "").split()) or os.environ.get("SENDER", "")
+    body = extract_text(msg)
+
+    haystack = f"{subject}\n{body}" if args.alert_body else subject
+    alert = is_urgent(msg) or bool(re.search(args.alert_pattern, haystack))
+
+    # The MTA's environment may be minimal; mn needs a home for its session.
+    env = os.environ.copy()
+    env.setdefault("HOME", pwd.getpwuid(os.getuid()).pw_dir)
+
+    def send(options: list[str], text: str | None = None) -> str:
+        """Run `mn send` and return the ID of the new event."""
+        cmd = [args.mn, "send", "-r", room, *options]
+        if args.dry_run:
+            print(f"$ {shlex.join(cmd)}\n{text or ''}\n")
+            return "$EVENT_ID"
+        try:
+            proc = subprocess.run(
+                cmd,
+                input=(text or "").encode(),
+                capture_output=True,
+                timeout=args.timeout,
+                env=env,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise MnError(str(exc)) from exc
+        if proc.returncode != 0:
+            detail = proc.stderr.decode(errors="replace").strip()
+            raise MnError(f"exit code {proc.returncode}: {detail[-300:]}")
+        return proc.stdout.decode().strip()
+
+    headline = format_headline(subject, sender, alert)
+    inline = (
+        bool(body)
+        and len(body) <= args.max_chars
+        and body.count("\n") < args.inline_lines
+    )
+    if inline:
+        headline += f"\n\n{md_code_block(body)}"
+
+    # A notice never notifies, not even with a mention (the default push rules
+    # suppress notices first), so alerts are regular messages.
+    options = ["--markdown"]
+    if not alert:
+        options.append("--notice")
+    elif args.mention:
+        for user in args.mention:
+            options += ["--mention", user]
+    elif not args.no_mention:
+        options.append("--mention-room")
+
+    try:
+        try:
+            root = send(options, headline)
+        except MnError as exc:
+            # The bot lacks the power level for @room: the alert matters more
+            # than the ping.
+            if "--mention-room" not in options or "@room" not in str(exc):
+                raise
+            print(f"mail2matrix: sending without @room: {exc}", file=sys.stderr)
+            options.remove("--mention-room")
+            root = send(options, headline)
+    except MnError as exc:
+        print(f"mail2matrix: mn failed: {exc}", file=sys.stderr)
+        return EX_TEMPFAIL
+
+    with tempfile.TemporaryDirectory(prefix="mail2matrix-") as tmpdir:
+        tmp = Path(tmpdir)
+        followups: list[tuple[list[str], str | None]] = []
+        if body and not inline:
+            if len(body) <= args.max_chars:
+                followups.append((["--markdown", "--notice"], md_code_block(body)))
+            else:
+                text = md_code_block(truncate(body, args.max_chars))
+                text += "\n\nTruncated, the full text is attached."
+                followups.append((["--markdown", "--notice"], text))
+                full = tmp / f"{safe_filename(subject, 'mail')}.txt"
+                full.write_text(body + "\n", encoding="utf-8")
+                followups.append((["--attachment", str(full)], None))
+        for path in save_attachments(msg, tmp):
+            followups.append((["--attachment", str(path)], None))
+
+        # The headline is out, so the mail counts as delivered from here on: a
+        # temporary failure would make the MTA retry and post it again.
+        for extra, text in followups:
+            try:
+                send(["--thread", root, *extra], text)
+            except MnError as exc:
+                print(f"mail2matrix: thread message lost: {exc}", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
