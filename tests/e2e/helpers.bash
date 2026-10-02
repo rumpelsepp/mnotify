@@ -51,9 +51,46 @@ login() {
         <<<"$(password_of "$2")" 2>/dev/null
 }
 
+# login_profile DEVICE PROFILE USER: like `login`, into PROFILE of DEVICE.
+login_profile() {
+    mn_on "$1" -p "$2" login "$3" --homeserver "$E2E_HOMESERVER" --device-name "$1-$2" \
+        <<<"$(password_of "$3")" 2>/dev/null
+}
+
+# token_of DEVICE: the access token of DEVICE's login.
+token_of() {
+    mn_on "$1" --json homeserver --token --force | jq -r .token
+}
+
+# client_api TOKEN PATH [CURL ARGS...]: GET a client-server API PATH (below
+# /_matrix/client/v3) with TOKEN. Only for what mn cannot show itself.
+client_api() {
+    local token=$1 path=$2
+    shift 2
+    curl --silent --header "Authorization: Bearer $token" "$@" \
+        "$E2E_HOMESERVER/_matrix/client/v3$path"
+}
+
+# client_sync TOKEN: an initial /sync with TOKEN. Synapse caches identical
+# sync requests for a while, so every call asks a little differently.
+client_sync() {
+    client_api "$1" /sync --get --data-urlencode timeout=0 \
+        --data-urlencode "filter={\"room\": {\"timeline\": {\"limit\": $RANDOM}}}"
+}
+
 # The text of the last m.room.message in $output (JSON of `mn messages`).
 last_body() {
-    jq -r '[.[] | select(.type == "m.room.message")] | last | .content.body' <<<"$output"
+    last_content | jq -r .body
+}
+
+# The content of the last m.room.message in $output (JSON of `mn messages`).
+last_content() {
+    jq -c '[.[] | select(.type == "m.room.message")] | last | .content' <<<"$output"
+}
+
+# The contents of all m.room.message events in $output, as a JSON array.
+contents() {
+    jq -c '[.[] | select(.type == "m.room.message") | .content]' <<<"$output"
 }
 
 # wait_until SECONDS COMMAND...: retry COMMAND until it succeeds.
@@ -64,6 +101,13 @@ wait_until() {
         ((SECONDS < deadline)) || return 1
         sleep 0.5
     done
+}
+
+# stop PID: stop a background `mn_on ...` job: the mn below it, then the job.
+stop() {
+    pkill -TERM -P "$1" 2>/dev/null || true
+    kill "$1" 2>/dev/null || true
+    wait "$1" 2>/dev/null || true
 }
 
 # Alice (device a1) and Bob (device b1), both joined to a fresh room $room.

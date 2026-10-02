@@ -1,155 +1,78 @@
 #!/usr/bin/env bats
-# Sending and receiving: text, files, relations, mentions, redactions, sync.
+# mn messages
 
 setup() {
     load helpers
 }
 
-@test "text in an unencrypted room" {
-    alice_and_bob_in_room --unencrypted
+@test "the latest messages, oldest first, at most --limit events" {
+    alice_and_bob_in_room
+    for i in 1 2 3 4 5; do
+        mn_on a1 send --room "$room" "message $i" >/dev/null
+    done
 
-    run mn_on a1 send --room "$room" "hello"
+    run --separate-stderr mn_on b1 --json messages --room "$room" --limit 3
     assert_success
-    assert_output --regexp '^\$[^[:space:]]+$'
+    assert_equal "$(jq length <<<"$output")" 3
+    assert_equal "$(jq -r '[.[].content.body] | join(",")' <<<"$output")" "message 3,message 4,message 5"
 
-    run mn_on b1 --json messages --room "$room"
-    assert_success
-    assert_equal "$(last_body)" "hello"
+    # The default is 10.
+    run --separate-stderr mn_on b1 --json messages --room "$room"
+    assert_equal "$(jq length <<<"$output")" 10
 }
 
-@test "text in an encrypted room" {
+@test "the human form is one line per event" {
     alice_and_bob_in_room
-
-    run mn_on a1 send --room "$room" "secret"
-    assert_success
-
-    run mn_on b1 --json messages --room "$room"
-    assert_success
-    assert_equal "$(last_body)" "secret"
-    refute_output --partial "m.room.encrypted"
-}
-
-@test "multi-line text from stdin keeps its lines, minus the final newline" {
-    alice_and_bob_in_room
-
-    printf 'line 1\nline 2\n' | mn_on a1 send --room "$room"
-
-    run mn_on b1 --json messages --room "$room"
-    assert_equal "$(last_body)" $'line 1\nline 2'
-}
-
-@test "an empty message is refused" {
-    alice_and_bob_in_room
-
-    run mn_on a1 send --room "$room" <<<""
-    assert_failure
-    assert_output --partial "empty message"
-}
-
-@test "markdown, notice and emote" {
-    alice_and_bob_in_room
-
-    mn_on a1 send --room "$room" --markdown "**bold**"
-    mn_on a1 send --room "$room" --notice "bot speaking"
+    root=$(mn_on a1 send --room "$room" "plain")
     mn_on a1 send --room "$room" --emote "waves"
+    echo x >"$BATS_TEST_TMPDIR/a.log"
+    mn_on a1 send --room "$room" --attachment "$BATS_TEST_TMPDIR/a.log"
+    mn_on a1 send --room "$room" --thread "$root" "in thread"
+    printf 'two\nlines' | mn_on a1 send --room "$room"
+    gone=$(mn_on a1 send --room "$room" "oops")
+    mn_on a1 redact --room "$room" --event-id "$gone"
 
-    run mn_on b1 --json messages --room "$room"
-    messages=$(jq -c '[.[] | select(.type == "m.room.message") | .content]' <<<"$output")
-    assert_equal "$(jq -r '.[-3].formatted_body' <<<"$messages")" "<strong>bold</strong>"
-    assert_equal "$(jq -r '.[-2].msgtype' <<<"$messages")" "m.notice"
-    assert_equal "$(jq -r '.[-1].msgtype' <<<"$messages")" "m.emote"
-}
-
-@test "a file attachment" {
-    alice_and_bob_in_room
-    echo "log line" >"$BATS_TEST_TMPDIR/backup.log"
-
-    run mn_on a1 send --room "$room" --attachment "$BATS_TEST_TMPDIR/backup.log"
+    run --separate-stderr mn_on b1 messages --room "$room" --limit 7
     assert_success
-
-    run mn_on b1 --json messages --room "$room"
-    content=$(jq -c '[.[] | select(.type == "m.room.message")] | last | .content' <<<"$output")
-    assert_equal "$(jq -r .msgtype <<<"$content")" "m.file"
-    assert_equal "$(jq -r .body <<<"$content")" "backup.log"
-    # Encrypted room: the file is encrypted too and its key travels in the event.
-    assert_equal "$(jq -r '.file.key.alg' <<<"$content")" "A256CTR"
+    ts='[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}'
+    assert_line --index 0 --regexp "^$ts  $alice  plain\$"
+    assert_line --index 1 --regexp "^$ts  $alice  \\* waves\$"
+    assert_line --index 2 --regexp "^$ts  $alice  \\[file\\] a.log\$"
+    assert_line --index 3 --regexp "^$ts  $alice  ↳ in thread\$"
+    assert_line --index 4 --regexp "^$ts  $alice  two\$"
+    assert_line --index 5 --regexp "^ +lines\$"
+    assert_line --index 6 --regexp "^$ts  $alice  \\[deleted\\]\$"
 }
 
-@test "a large image gets its size and a thumbnail" {
-    alice_and_bob_in_room
-    python3 "$BATS_TEST_DIRNAME/make_png.py" 1200 300 "$BATS_TEST_TMPDIR/wide.png"
-
-    mn_on a1 send --room "$room" --attachment "$BATS_TEST_TMPDIR/wide.png"
-
-    run mn_on b1 --json messages --room "$room"
-    content=$(jq -c '[.[] | select(.type == "m.room.message")] | last | .content' <<<"$output")
-    assert_equal "$(jq -r .msgtype <<<"$content")" "m.image"
-    assert_equal "$(jq -r .info.w <<<"$content")" 1200
-    assert_equal "$(jq -r .info.h <<<"$content")" 300
-    assert_equal "$(jq -r .info.thumbnail_info.w <<<"$content")" 800
-}
-
-@test "reply and thread" {
+@test "--thread shows the root and its replies only" {
     alice_and_bob_in_room
     root=$(mn_on a1 send --room "$room" "deploy started")
+    mn_on a1 send --room "$room" --thread "$root" "step 1"
+    mn_on a1 send --room "$room" "unrelated"
+    mn_on b1 send --room "$room" --thread "$root" "step 2"
 
-    mn_on b1 send --room "$room" --reply-to "$root" "ack"
-    mn_on a1 send --room "$room" --thread "$root" "step 1 done"
-
-    run mn_on b1 --json messages --room "$room"
-    relations=$(jq -c '[.[] | select(.type == "m.room.message") | .content["m.relates_to"]]' <<<"$output")
-    assert_equal "$(jq -r '.[-2]["m.in_reply_to"].event_id' <<<"$relations")" "$root"
-    assert_equal "$(jq -r '.[-1].rel_type' <<<"$relations")" "m.thread"
-    assert_equal "$(jq -r '.[-1].event_id' <<<"$relations")" "$root"
-
-    run mn_on b1 --json messages --room "$room" --thread "$root"
+    run --separate-stderr mn_on b1 --json messages --room "$room" --thread "$root"
     assert_success
-    assert_equal "$(last_body)" "step 1 done"
+    assert_equal "$(jq -r '[.[].content.body] | join(",")' <<<"$output")" "deploy started,step 1,step 2"
+
+    run --separate-stderr mn_on b1 --json messages --room "$room" --thread "$root" --limit 1
+    assert_equal "$(jq -r '[.[].content.body] | join(",")' <<<"$output")" "deploy started,step 2"
 }
 
-@test "mentions are declared, @room needs the power level" {
+@test "events of other kinds come along" {
     alice_and_bob_in_room
 
-    mn_on a1 send --room "$room" --mention "$bob" "disk full"
-    run mn_on b1 --json messages --room "$room"
-    assert_equal "$(jq -r '[.[] | select(.type == "m.room.message")] | last | .content["m.mentions"].user_ids[0]' <<<"$output")" "$bob"
+    run mn_on b1 --json messages --room "$room" --limit 50
+    assert_equal "$(jq -r '[.[] | select(.type == "m.room.member") | .content.membership + " " + .state_key] | join(",")' <<<"$output")" \
+        "join $alice,invite $bob,join $bob"
+    assert_equal "$(jq '[.[] | select(.type == "m.room.encryption")] | length' <<<"$output")" 1
+}
 
-    run mn_on b1 send --room "$room" --mention-room "everyone!"
+@test "a room the user is not in fails" {
+    alice_and_bob_in_room
+    other=$(mn_on a1 room create)
+
+    run mn_on b1 messages --room "$other"
     assert_failure
-}
-
-@test "redact removes the content" {
-    alice_and_bob_in_room
-    event=$(mn_on a1 send --room "$room" "oops")
-
-    run mn_on a1 redact --room "$room" --event-id "$event" --reason "typo"
-    assert_success
-
-    run mn_on b1 --json messages --room "$room"
-    assert_equal "$(jq -r --arg id "$event" '.[] | select(.event_id == $id) | .content.body // "gone"' <<<"$output")" "gone"
-}
-
-@test "sync prints new messages as JSON lines" {
-    alice_and_bob_in_room
-    E2E_TIMEOUT=30 mn_on b1 --json sync --room "$room" >"$BATS_TEST_TMPDIR/sync.jsonl" 2>/dev/null &
-    sync_pid=$!
-
-    # sync only prints what arrives after it started; send until one shows up.
-    got_live() {
-        mn_on a1 send --room "$room" "live" >/dev/null
-        jq -e 'select(.content.body == "live")' "$BATS_TEST_TMPDIR/sync.jsonl" >/dev/null
-    }
-    run wait_until 20 got_live
-    kill "$sync_pid" 2>/dev/null || true
-    assert_success
-}
-
-@test "MN_ROOM replaces --room" {
-    alice_and_bob_in_room
-
-    run mn_on a1 MN_ROOM="$room" send "via env"
-    assert_success
-
-    run mn_on b1 --json messages --room "$room"
-    assert_equal "$(last_body)" "via env"
+    assert_output --partial "not a member"
 }
