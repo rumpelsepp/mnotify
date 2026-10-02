@@ -740,7 +740,7 @@ async fn run(
         }
         Command::Typing { room, disable } => {
             let room = client.joined_room(&room.room).await?;
-            room.typing_notice(!disable).await?;
+            client.set_typing(&room, !disable).await?;
         }
         Command::Whoami => {
             let resp = client.whoami().await?;
