@@ -1,6 +1,6 @@
 [package]
 name = "mnotify"
-version = "0.2.0"
+version = "0.3.0"
 description = "Send and receive Matrix messages from scripts and headless servers"
 edition = "2024"
 rust-version = "1.93"
