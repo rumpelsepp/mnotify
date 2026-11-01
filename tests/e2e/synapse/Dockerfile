@@ -1,6 +1,6 @@
 # The homeserver the e2e suite runs against. Pinned so a Synapse release
 # never breaks CI unnoticed; Dependabot proposes updates.
-FROM docker.io/matrixdotorg/synapse:v1.162.0
+FROM docker.io/matrixdotorg/synapse:v1.164.1
 
 COPY overrides.yaml /overrides.yaml
 
